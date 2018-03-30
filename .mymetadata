@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project-module
+  type="WEB"
+  name="NCPS"
+  id="myeclipse.1494902478335"
+  context-root="/NPCS"
+  j2ee-spec="5.0"
+  archive="NCPS.war">
+  <attributes>
+    <attribute name="webrootdir" value="WebRoot" />
+  </attributes>
+</project-module>
+

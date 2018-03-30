@@ -1,0 +1,197 @@
+package com.adtec.ncps.busi.qrps.qr;
+
+import org.apache.commons.lang3.StringUtils;
+
+import com.adtec.ncps.DtaTool;
+import com.adtec.ncps.busi.ncp.BusiPub;
+import com.adtec.ncps.busi.ncp.DataBaseUtils;
+import com.adtec.ncps.busi.ncp.SysPub;
+import com.adtec.ncps.busi.qrps.QrBusiPub;
+import com.adtec.starring.datapool.EPOper;
+import com.adtec.starring.struct.dta.DtaInfo;
+import com.union.sdk.SDKConstants;
+
+/**
+ * @ClassName: ZS0140000903
+ * @Description: 查询付款状态
+ * @author Q
+ * @date 2018年1月4日上午11:26:41
+ *
+ */
+public class ZS0140000903 {
+
+    public static int deal() throws Exception {
+	SysPub.appLog("INFO", "开始ZS0140000903业务处理");
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	int ret = 0;
+
+	// 查询付款交易
+	String txnNo = (String) EPOper.get(tpID, "OBJ_QR_UP_ALL[0].txnNo");
+	ret = QrBusiPub.queryQrpsBook(txnNo, "0130000903");
+	if (ret != 1) {
+	    if (0 == ret) {
+		// 没有查到原交易记录， 保存交易序列号
+		EPOper.put(tpID, "T_QRP_BOOK[0].TXN_NO", txnNo);
+		SysPub.appLog("INFO", "没有查到原付款交易");
+	    } else {
+		SysPub.appLog("ERROR", "查询原付款信息失败");
+		return -1;
+	    }
+	}
+	// 组织报文发送到银联
+	ret = sendUP();
+	if (ret != 0) {
+	    return -1;
+	}
+
+	// 根据银联返回结果处理数据
+	ret = uptOrigQrBook();
+	if (ret != 0) {
+	    SysPub.appLog("ERROR", "修改数据库表失败");
+	    return -1;
+	} else {
+	    SysPub.appLog("INFO", "修改原付款数据成功");
+	}
+
+	// 修改原订单的信息
+	ret = uptOldQrNoInfo();
+	if (ret != 1) {
+	    SysPub.appLog("ERROR", "修改数据库表失败");
+	    return -1;
+	} else {
+	    SysPub.appLog("INFO", "修改原付款数据成功");
+	}
+
+	return 0;
+    }
+
+    public static int uptOldQrNoInfo() throws Exception {
+
+	// 获取数据源
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String szTpID = dtaInfo.getTpId();
+
+	int ret = 0;
+
+	try {
+	    String szSql = "update t_qrp_book set stat = ?,voucher_num = ?, settle_key = ?, settle_date = ?, "
+		    + "com_info = ?,resp_code = ?, resp_msg = ? " + "where txn_no = ? and req_type = ? ";
+
+	    String reqType = "0120000903";
+	    String txnNo = (String) EPOper.get(szTpID, "T_QRP_BOOK[0].TXN_NO");
+
+	    // 付款成功信息
+	    String voucherNum = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].voucherNum");
+	    String settleKey = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].settleKey");
+	    String settleDate = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].settleDate");
+	    String comInfo = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].comInfo");
+
+	    String respCode = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].origRespCode");
+	    String respMsg = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].origRespMsg");
+
+	    String stat = "000";
+	    if ("00".equals(respCode)) {
+		stat = "400";
+	    } else {
+		stat = "401";
+	    }
+
+	    Object[] value = { stat, voucherNum, settleKey, settleDate, comInfo, respCode, respMsg, txnNo, reqType };
+	    ret = DataBaseUtils.execute(szSql, value);
+	    if (ret == 0) {
+		SysPub.appLog("ERROR", "更新原纪录失败");
+	    }
+	} catch (Exception e) {
+	    throw e;
+	}
+	return ret;
+
+    }
+
+    public static int uptOrigQrBook() throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String szTpID = dtaInfo.getTpId();
+	int iResult = 0;
+	String szSql;
+	Object[] value = null;
+	int seqNo = 0;
+	try {
+	    // 更新数据库
+	    String platDate = (String) EPOper.get(szTpID, "T_QRP_BOOK[0].PLAT_DATE");
+	    SysPub.appLog("INFO", "platDate-%s", platDate);
+
+	    // 返回信息
+	    String voucherNum = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].voucherNum");
+	    String settleDate = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].settleDate");
+	    String settleKey = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].settleKey");
+	    String comInfo = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].comInfo");
+	    String respCode = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].origRespCode");
+	    String respMsg = (String) EPOper.get(szTpID, "OBJ_QR_UP_ALL[0].origRespMsg");
+
+	    if (StringUtils.isEmpty(platDate)) {// 没有查到原付款记录
+		szSql = "insert into t_qrp_book(plat_date, seq_no, voucher_num, settle_date , "
+			+ "settle_key,com_info, resp_code, resp_msg, rmrk) values( ?, ?, ?, ?, ?, ?, ?, ?, ?)";
+		// 生成新的流水
+		BusiPub.getPlatSeq();
+		seqNo = (Integer) EPOper.get(szTpID, "INIT[0].SeqNo");
+		platDate = (String) EPOper.get(szTpID, "T_PLAT_PARA[0].PLAT_DATE");
+		value = new Object[] { platDate, seqNo, voucherNum, settleDate, settleKey, comInfo, respCode, respMsg,
+			"付款查询后补登记" };
+	    } else {
+		seqNo = (Integer) EPOper.get(szTpID, "T_QRP_BOOK[0].SEQ_NO");
+
+		szSql = "update t_qrp_book set voucher_num =?, settle_date =?, "
+			+ "settle_key=?,com_info=?, resp_code=?, resp_msg =? where plat_date = ? and seq_no = ? ";
+		value = new Object[] { voucherNum, settleDate, settleKey, comInfo, respCode, respMsg, platDate, seqNo };
+	    }
+
+	    iResult = DataBaseUtils.execute(szSql, value);
+	    if (iResult <= 0) {
+		SysPub.appLog("ERROR", "更新t_qrp_book表失败");
+	    }
+	} catch (Exception e) {
+	    throw e;
+	}
+
+	return 0;
+    }
+
+    /**
+     * @Description: 调用银联接口 发送银联
+     * @author Q
+     * @return
+     * @throws Exception
+     * @date 2017年12月17日下午5:04:44
+     */
+    public static int sendUP() throws Exception {
+	SysPub.appLog("INFO", "发往银联开始");
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	try {
+	    /* 报文头赋值 */
+	    EPOper.put(tpID, "OBJ_QR_UP_ALL[0].version", SDKConstants.VERSION_1_0_0);
+	    EPOper.put(tpID, "OBJ_QR_UP_ALL[0].signature", "0");
+	    // EPOper.put(tpID, "OBJ_QR_UP_ALL[0].certId", certId);
+	    EPOper.put(tpID, "OBJ_QR_UP_ALL[0].reqType", "0140000903");
+	    // EPOper.put(tpID, "OBJ_QR_UP_ALL[0].issCode", issCode);
+	    // EPOper.put(tpID, "OBJ_QR_UP_ALL[0].qrType", qrType);
+
+	    // 调度银联0140000903服务
+	    SysPub.appLog("INFO", "调用银联0140000903服务开始");
+	    DtaTool.call("QR_UP_CLI", "ZS0140000903");
+
+	} catch (Exception e) {
+	    SysPub.appLog("ERROR", "调用银联服务0140000903失败：%s", e.getMessage());
+	    throw e;
+	}
+
+	String respCode = (String) EPOper.get(tpID, "OBJ_QR_UP_ALL[0].respCode");
+	if (!"00".equals(respCode)) {
+	    return -1;
+	}
+
+	return 0;
+    }
+
+}

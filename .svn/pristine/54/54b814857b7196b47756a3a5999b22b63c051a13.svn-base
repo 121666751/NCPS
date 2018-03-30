@@ -1,0 +1,336 @@
+package com.adtec.ncps.busi.qrps.qr;
+
+import org.apache.commons.lang3.StringUtils;
+
+import com.adtec.ncps.DtaTool;
+import com.adtec.ncps.busi.ncp.AmountUtils;
+import com.adtec.ncps.busi.ncp.BusiPub;
+import com.adtec.ncps.busi.ncp.DataBaseUtils;
+import com.adtec.ncps.busi.ncp.SysPub;
+import com.adtec.ncps.busi.qrps.QrBusiPub;
+import com.adtec.ncps.busi.qrps.bean.QrBook;
+import com.adtec.ncps.busi.qrps.dao.QrBookDao;
+import com.adtec.starring.datapool.EPOper;
+import com.adtec.starring.struct.dta.DtaInfo;
+import com.union.sdk.SDKConstants;
+
+/**
+ * @ClassName: ZS0180000903
+ * @Description: 查询营销信息，如果订单查询中有金额，立即进行营销信息查询，如果没有金额，在付款时进行营销信息查询
+ * @author Q
+ * @date 2018年1月3日下午3:14:54
+ *
+ */
+public class ZS0180000903 {
+
+    private static QrBook pubBook = new QrBook();
+
+    public static int uptOrderInfo() throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String szTpID = dtaInfo.getTpId();
+	int iResult = 0;
+	
+	QrBook qrBook  = pubBook;
+	
+	try {
+
+	    String szSql = "update t_qrp_book set coupon_info=?, coupon_info_addninfo=?, "
+		    + "coupon_info_desc=?, coupon_info_id=?, coupon_info_offst_amt=?, coupon_info_spnsr_id=?,"
+		    + " coupon_info_type =? where plat_date = ? and seq_no = ? ";
+
+	    // 更新数据库
+
+	    String platDate = (String) EPOper.get(szTpID, "T_QRP_BOOK[0].PLAT_DATE");
+	    int seqNo = (Integer) EPOper.get(szTpID, "T_QRP_BOOK[0].SEQ_NO");
+
+	    // 优惠信息
+	    String couponInfo = qrBook.getCoupon_info();
+	    String addnInfo = qrBook.getCoupon_info_addninfo();
+	    String desc = qrBook.getCoupon_info_desc();
+	    String id = qrBook.getCoupon_info_id();
+	    double offstAmt = qrBook.getCoupon_info_offst_amt();
+	    String spnsrId = qrBook.getCoupon_info_spnsr_id();
+	    String type = qrBook.getCoupon_info_type();
+
+	    Object[] value = { couponInfo, addnInfo, desc, id, offstAmt, spnsrId, type, platDate, seqNo };
+	    iResult = DataBaseUtils.execute(szSql, value);
+	    if (iResult <= 0) {
+		SysPub.appLog("ERROR", "更新t_qrp_book表失败");
+	    }
+	} catch (Exception e) {
+	    throw e;
+	}
+	EPOper.put(szTpID, "INIT._FUNC_RETURN", 0, "0");
+
+	return 0;
+    }
+
+    public static int qryOrderInfo(String svrReq, String svrRes, QrBook qrBook) throws Exception {
+
+		DtaInfo dtaInfo = DtaInfo.getInstance();
+		String tpID = dtaInfo.getTpId();
+	
+		String txnNo = (String) EPOper.get(tpID, svrReq+"[0].cd[0].txnNo");
+		int ret = QrBusiPub.queryQrpsBook(txnNo, "0120000903");
+		if (ret != 1) {
+			String respCode = "01";
+			String respMsg = "原订单信息没有找到";
+			SysPub.appLog("ERROR", respMsg);
+		    EPOper.put(tpID, svrRes+"[0].cd[0].respCode",respCode);
+			EPOper.put(tpID, svrRes+"[0].cd[0].respMsg",respMsg);
+			qrBook.setResp_code(respCode);
+			qrBook.setResp_msg(respMsg);
+//		    QrBusiPub.putPubRet("01", "原订单信息没有找到",svrRes);
+		    return -1;
+		}
+		return 0;
+    }
+
+    public static int deal() throws Exception {
+	SysPub.appLog("INFO", "开始ZS0180000903业务处理");
+
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	
+	QrBook qrBook = new QrBook();
+	
+	// 先产生流水号
+    BusiPub.getPlatSeq();
+    int iseq_no = (Integer) EPOper.get(tpID, "INIT[0].SeqNo");
+    String platDate = (String) EPOper.get(tpID, "T_PLAT_PARA[0].PLAT_DATE");
+    
+	int ret = 0;
+
+	String svcName = (String) EPOper.get(tpID, "OBJ_ALA_abstarct_REQ[0].svcName");
+	svcName = svcName.toUpperCase();
+	
+	String svrReq = "OBJ_EBANK_SVR_" + svcName + "_REQ";
+	String cltReq = "OBJ_QRUP_ALL";
+	String svrRes = "OBJ_EBANK_SVR_" + svcName + "_RES";
+	String cltRes = "OBJ_QRUP_ALL";
+	
+	EPOper.copy(tpID, tpID, "OBJ_ALA_abstarct_REQ[0].req", svrReq);
+	
+	SysPub.appLog("INFO", "复制svrReq成功");
+
+	stepDeal( svrReq,  svrRes,  tpID,  cltReq, qrBook,  cltRes,  platDate,  iseq_no);
+	
+	// 组织数据登记到book表
+	ret = insQrBook( qrBook,  platDate,  iseq_no,svrRes+"[0].cd[0].respCode", svrRes+"[0].cd[0].respMsg");
+	if (ret != 1) {
+	    SysPub.appLog("ERROR", "插入数据库表失败");
+	} else {
+	    SysPub.appLog("INFO", "插入数据库成功");
+	}
+
+	// 将优惠信息更新到原订单交易中
+//	ret = uptOrderInfo();
+
+	return 0;
+    }
+
+    private static int stepDeal(String svrReq, String svrRes, String tpID, String cltReq, QrBook qrBook, String cltRes,
+			String platDate, int iseq_no) throws Exception {
+    	// 查询原交易的订单信息
+    	int flag = 0;
+    	if (qryOrderInfo(svrReq,   svrRes,  qrBook) != 0) {
+    		//本应此处return，为保证录入输入报文数据到t_qrp_book表中，在sendUP中判断return
+			flag =  -1;
+		} 
+    	
+    	// 组织报文发送到银联
+    	if(sendUP( svrReq,  cltReq, svrRes,  cltRes,qrBook,flag) != 0) {
+    		return -1;
+    	}
+    	
+    	if ( recvUp( svrRes, cltRes, tpID,  qrBook,  platDate,  iseq_no,svrReq) != 0) {
+    		return -1;
+    	}
+    	return 0 ;
+	}
+
+	/**
+     * 根据银联返回结果处理数据
+     * @param svrRes
+     * @param cltRes
+     * @param tpID
+     * @param qrBook 
+     * @param platDate 
+     * @param iseq_no 
+     * @param svrReq 
+     * @return 
+     * @throws Exception
+     */
+    private static int recvUp(String svrRes,String cltRes,String tpID, QrBook qrBook, String platDate, int iseq_no, String svrReq) throws Exception  {
+    	// 非对象类型赋值
+	    QrBusiPub.qrBookData(tpID, qrBook, platDate, iseq_no);
+	    
+    	
+    	EPOper.delete(tpID, cltRes);
+    	EPOper.copy(tpID, tpID, "OBJ_ALA_abstarct_RES[0].res", cltRes);
+    	try {
+    		// 优惠信息是json格式的字符串，要特殊处理
+    		String couponInfo = (String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].couponInfo");
+    		if (couponInfo != null && couponInfo.length() > 0) {
+    			QrBusiPub.parsBase64Json2Ele(couponInfo, "couponInfo", "");
+    		}
+    	} catch (Exception e) {
+    		EPOper.put(tpID, "INIT._FUNC_RETURN", 0, "-1");
+    		SysPub.appLog("ERROR", "解析base64字符串到数据对象失败！-%s", e.getMessage());
+    		throw e;
+    	}
+    	
+    	String respCode = (String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].respCode");
+    	
+
+	    EPOper.put(tpID, svrRes+"[0].cd[0].reqType", (String) EPOper.get(tpID, cltRes+"[0].reqType"));
+	    EPOper.put(tpID, svrRes+"[0].cd[0].issCode", (String) EPOper.get(tpID, cltRes+"[0].issCode"));
+	    EPOper.put(tpID, svrRes+"[0].cd[0].respMsg", (String) EPOper.get(tpID, cltRes+"[0].respMsg"));
+	    
+//	    优惠信息
+	    EPOper.put(tpID, svrRes+"[0].cd[0].couponInfo[0].type", (String) EPOper.get(tpID, "COUPONINFO[0].type"));
+	    EPOper.put(tpID, svrRes+"[0].cd[0].couponInfo[0].spnsrId", (String) EPOper.get(tpID, "COUPONINFO[0].spnsrId"));	
+	    QrBusiPub.parsInfo2Obj("couponInfo", qrBook, svrRes);
+	    String offstAmt = String.valueOf(EPOper.get(tpID, "COUPONINFO[0].offstAmt"));
+	    if(offstAmt != null && "".endsWith(offstAmt)) {
+	   		EPOper.put(tpID, svrRes+"[0].cd[0].couponInfo[0]offstAmt", AmountUtils.changeF2Y(offstAmt));
+	   	}else {
+	   		EPOper.put(tpID, svrRes+"[0].cd[0].couponInfo[0].offstAmt", "");
+	   	}
+//	    EPOper.put(tpID, svrRes+"[0].cd[0].couponInfo[0].offstAmt", (String) EPOper.get(tpID, "COUPONINFO[0].offstAmt"));
+	    EPOper.put(tpID, svrRes+"[0].cd[0].couponInfo[0].id", (String) EPOper.get(tpID, "COUPONINFO[0].id"));
+	    EPOper.put(tpID, svrRes+"[0].cd[0].couponInfo[0].desc", (String) EPOper.get(tpID, "COUPONINFO[0].desc"));
+	    EPOper.put(tpID, svrRes+"[0].cd[0].couponInfo[0].addnInfo", (String) EPOper.get(tpID, "COUPONINFO[0].addnInfo"));
+	    EPOper.copy(tpID, tpID, svrReq + "[0].tx_code", svrRes + "[0].tx_code");
+	    
+	    if("00".equals(respCode)) {
+	    	EPOper.put(tpID, svrRes+"[0].cd[0].respCode","0000");
+	    }else {
+	    	EPOper.put(tpID, svrRes+"[0].cd[0].respCode", (String) EPOper.get(tpID, cltRes+"[0].respCode"));
+	    }
+	    EPOper.copy(tpID, tpID,svrRes, "OBJ_ALA_abstarct_RES[0].res");
+	    
+	    if (!"00".equals(respCode)) {
+    	    SysPub.appLog("ERROR", "银联服务0180000903返回失败：%s-%s", respCode,
+    		    (String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].respMsg"));
+    	}
+		return 0;
+	}
+
+	public static int insQrBook(QrBook qrBook, String platDate, int iseq_no, String respCodeEle, String respMsgEle) throws Exception {
+	SysPub.appLog("INFO", "开始ZS0180000903登记簿数据");
+	int iResult = 0;
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	try {
+	    
+	    // 非对象类型赋值
+	    QrBusiPub.qrBookData(tpID, qrBook, platDate, iseq_no);
+
+	    // 优惠信息
+	    qrBook.setCoupon_info_addninfo((String) EPOper.get(tpID, "COUPONINFO[0].addnInfo"));
+	    qrBook.setCoupon_info_desc((String) EPOper.get(tpID, "COUPONINFO[0].desc"));
+	    qrBook.setCoupon_info_id((String) EPOper.get(tpID, "COUPONINFO[0].id"));
+
+	    String offstAmtStr = (String) EPOper.get(tpID, "COUPONINFO[0].offstAmt");
+	    if (!StringUtils.isEmpty(offstAmtStr)) {
+		double amt = Double.parseDouble(offstAmtStr);
+		if (amt / 100 > 0.01) {
+		    qrBook.setCoupon_info_offst_amt(amt / 100);
+		}
+	    }
+
+	    qrBook.setCoupon_info_spnsr_id((String) EPOper.get(tpID, "COUPONINFO[0].spnsrId"));
+	    qrBook.setCoupon_info_type((String) EPOper.get(tpID, "COUPONINFO[0].type"));
+
+	    pubBook = qrBook;
+	    
+	    iResult = QrBookDao.insert(qrBook);
+	    if (iResult <= 0) {
+	    	EPOper.put(tpID, respCodeEle,"01");
+	    	EPOper.put(tpID, respMsgEle,"录入数据失败");
+		SysPub.appLog("ERROR", "插入t_qrp_book表失败");
+	    }
+	} catch (Exception e) {
+		EPOper.put(tpID, respCodeEle,"01");
+    	EPOper.put(tpID, respMsgEle,"录入数据失败");
+	    SysPub.appLog("ERROR", "插入t_qrp_book表失败");
+	    e.printStackTrace();
+	    return -1;
+	}
+
+	SysPub.appLog("INFO", "插入数据，返回:%d", iResult);
+	return iResult;
+    }
+
+    /**
+     * @Description: 调用银联接口 发送银联
+     * @author Q
+     * @param qrBook 
+     * @param flag 
+     * @return
+     * @throws Exception
+     * @date 2017年12月17日下午5:04:44
+     */
+    public static int sendUP(String svrReq, String cltReq,String svrRes, String cltRes, QrBook qrBook, int flag) throws Exception {
+	SysPub.appLog("INFO", "发往银联开始");
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	
+	try {
+	    /* 报文头赋值 */
+		EPOper.put(tpID, "OBJ_QRUP_ALL[0].version", SDKConstants.VERSION_1_0_0);
+	    EPOper.put(tpID, "OBJ_QRUP_ALL[0].signature", "0");
+	    EPOper.put(tpID, "OBJ_QRUP_ALL[0].certId", "68759529225");//证书id
+	    EPOper.put(tpID, "OBJ_QRUP_ALL[0].reqType", (String) EPOper.get(tpID, svrReq+"[0].cd[0].reqType"));
+	    EPOper.put(tpID, "OBJ_QRUP_ALL[0].issCode", (String) EPOper.get(tpID, svrReq+"[0].cd[0].issCode"));
+	    EPOper.put(tpID, "OBJ_QRUP_ALL[0].txnNo", (String) EPOper.get(tpID, svrReq+"[0].cd[0].txnNo"));
+	    EPOper.put(tpID, "OBJ_QRUP_ALL[0].currencyCode", (String) EPOper.get(tpID, svrReq+"[0].cd[0].currencyCode"));
+	    EPOper.put(tpID, "OBJ_QRUP_ALL[0].encryptCertId", (String) EPOper.get(tpID, svrReq+"[0].cd[0].encryptCertId"));
+
+//	    EPOper.copy(tpID, tpID, "T_QRP_BOOK[0].TXN_NO", "OBJ_QRUP_ALL[0].txnNo");
+
+	    double txnAmt = (Double) EPOper.get(tpID, "T_QRP_BOOK[0].TXN_AMT");
+	    if (txnAmt < 0.001) {
+	    	// 如果订单中没有金额，就用输入的金额
+	    	EPOper.put(tpID, "OBJ_QRUP_ALL[0].txnAmt",AmountUtils.changeY2F(String.valueOf(EPOper.get(tpID, svrReq+"[0].cd[0].txnAmt"))));
+	    } else {
+	    	int txnAmtInt = Integer.parseInt(AmountUtils.changeY2F(String.valueOf(txnAmt)));
+			EPOper.put(tpID, "OBJ_QRUP_ALL[0].txnAmt", String.valueOf(txnAmtInt));
+	    }
+//	    EPOper.copy(tpID, tpID, "T_QRP_BOOK[0].CURRENCY_CODE", "OBJ_QRUP_ALL[0].currencyCode");
+
+	    // 付款方信息
+	    String payerInfo = QrBusiPub.parsEle2Base64Info("payerInfo", true ,svrReq);
+	    QrBusiPub.parsInfo2Obj("payerInfo", qrBook, svrReq);
+	    EPOper.put(tpID, "OBJ_QRUP_ALL[0].payerInfo", payerInfo);
+
+	    // 收款方信息
+	    String payeeInfo = QrBusiPub.parsEle2Base64Info("payeeInfo", true ,svrReq);
+	    QrBusiPub.parsInfo2Obj("payeeInfo", qrBook, svrReq);
+	    EPOper.put(tpID, "OBJ_QRUP_ALL[0].payeeInfo", payeeInfo);
+	    
+	    if(flag != 0 ) {
+	    	 SysPub.appLog("INFO", "查记录失败，sendUP中结束");
+	    	return -1;
+	    }
+	    EPOper.copy(tpID, tpID,cltReq , "OBJ_ALA_abstarct_REQ[0].req" );
+	    // 调度银联0180000903服务
+	    SysPub.appLog("INFO", "调用银联0180000903服务开始");
+	    DtaTool.call("QRUP_CLI", "ZS0180");
+	} catch (Exception e) {
+		String respCode = "01";
+		String respMsg = "调用银联服务0180000903失败";
+	    EPOper.put(tpID, svrRes+"[0].cd[0].respCode",respCode);
+		EPOper.put(tpID, svrRes+"[0].cd[0].respMsg",respMsg);
+		qrBook.setResp_code(respCode);
+		qrBook.setResp_msg(respMsg);
+	    SysPub.appLog("ERROR", "调用银联服务0180000903失败：%s", e.getMessage());
+	    return -1;
+	}
+
+	return 0;
+    }
+
+}

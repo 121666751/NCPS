@@ -1,0 +1,3488 @@
+package com.adtec.ncps.busi.qrps;
+
+import java.io.UnsupportedEncodingException;
+import java.lang.reflect.Field;
+import java.net.URLEncoder;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.HashMap;
+import java.util.Map;
+import java.util.function.DoubleBinaryOperator;
+
+import javax.sql.DataSource;
+
+import org.apache.commons.lang3.StringUtils;
+import org.bson.util.StringRangeSet;
+
+import com.adtec.ncps.DtaTool;
+import com.adtec.ncps.busi.ncp.AmountUtils;
+import com.adtec.ncps.busi.ncp.BusiMsgProc;
+import com.adtec.ncps.busi.ncp.DataBaseUtils;
+import com.adtec.ncps.busi.ncp.FileTool;
+import com.adtec.ncps.busi.ncp.PubTool;
+import com.adtec.ncps.busi.ncp.SysPub;
+import com.adtec.ncps.busi.ncp.SysPubDef;
+import com.adtec.ncps.busi.ncp.dao.BookDaoTool;
+import com.adtec.ncps.busi.ncp.dao.BookExtDaoTool;
+import com.adtec.ncps.busi.qrps.bean.CouponInfo;
+import com.adtec.ncps.busi.qrps.bean.QrBook;
+import com.adtec.starring.datapool.EPOper;
+import com.adtec.starring.global.SysDef;
+import com.adtec.starring.log.DBExecuter;
+import com.adtec.starring.respool.ResPool;
+import com.adtec.starring.struct.dta.DtaInfo;
+import com.adtec.starring.util.StringTool;
+import com.alibaba.fastjson.JSON;
+import com.alibaba.fastjson.JSONArray;
+import com.alibaba.fastjson.JSONObject;
+import com.union.sdk.SDKConstants;
+import com.union.sdk.SDKUtil;
+import com.union.sdk.SignService;
+
+public class QrBusiPub {
+
+	/**
+	 *  将info信息转到QrBook对象中
+	 * @param type
+	 * @param qrBook
+	 * @param svrReq
+	 */
+	public static void parsInfo2Obj(String type, QrBook qrBook ,String svrReq) {
+		DtaInfo dtaInfo = DtaInfo.getInstance();
+		String tpID = dtaInfo.getTpId();
+		
+		if ("PAYERINFO".equals(type.toUpperCase())) {
+		    String accNo = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].accNo");
+		    String name = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].name");
+		    String payerBankInfo = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].payerBankInfo");
+		    String issCode = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].issCode");
+		    String acctClass = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].acctClass");
+		    String certifTp = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].certifTp");
+		    String certifId = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].certifId");
+		    String cvn2 = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].cvn2");
+		    String expired = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].expired");
+		    String cardAttr = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].cardAttr");
+		    String mobile = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].mobile");
+		    qrBook.setPayer_info_acc_no(accNo);
+		    qrBook.setPayer_info_name(name);
+		    qrBook.setPayer_info_payer_bank_info(payerBankInfo);
+		    qrBook.setPayer_info_iss_code(issCode);
+		    qrBook.setPayer_info_acct_class(acctClass);
+		    qrBook.setPayer_info_certif_tp(certifTp);
+		    qrBook.setPayer_info_certif_id(certifId);
+		    qrBook.setPayer_info_cvn2(cvn2);
+		    qrBook.setPayer_info_expired(expired);
+		    qrBook.setPayer_info_card_attr(cardAttr);
+		    qrBook.setPayer_info_mobile(mobile);
+		    
+
+		} else if ("COUPONINFO".equals(type.toUpperCase())) {//  优惠信息couponInfo
+			String type1 = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].type");
+			String spnsrId = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].spnsrId");
+			String offstAmt = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].offstAmt");
+			String id = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].id");
+			String desc = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].desc");
+			String addnInfo = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].addnInfo");
+			qrBook.setCoupon_info_type(type1);
+			qrBook.setCoupon_info_spnsr_id(spnsrId);
+			if(offstAmt != null && !offstAmt.trim().isEmpty()) {
+				qrBook.setCoupon_info_offst_amt(Double.valueOf(offstAmt));
+			}
+			qrBook.setCoupon_info_id(id);
+			qrBook.setCoupon_info_desc(desc);
+			qrBook.setCoupon_info_addninfo(addnInfo);
+			
+		} else if ("ADDNCOND".equals(type.toUpperCase())) {// addnCond附加处理条件ADDNCOND
+		    String currency = (String) EPOper.get(tpID, svrReq+"[0].cd[0].addnCond[0].currency");
+		    String pinFreeStr = (String) EPOper.get(tpID, svrReq+"[0].cd[0].addnCond[0].pinFree");
+		    String maxAmontStr = (String) EPOper.get(tpID, svrReq+"[0].cd[0].addnCond[0].maxAmont");
+		    qrBook.setAddn_cond_currency(currency);
+		    if(pinFreeStr != null && !pinFreeStr.trim().isEmpty()) {
+		    	qrBook.setAddn_cond_pinfree(Integer.valueOf(pinFreeStr));
+		    }
+		    if(maxAmontStr != null && !maxAmontStr.trim().isEmpty()) {
+		    	qrBook.setAddn_cond_maxamont(Double.valueOf(maxAmontStr));
+		    }
+
+		} else if ("PAYEEINFO".equals(type.toUpperCase())) {// payeeInfo收款方信息PAYEEINFO
+		    String name = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payeeInfo[0].name");
+		    String id = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].id");
+		    String merCatCode = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].merCatCode");
+		    String termId = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].termId");
+		    String subName = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].accNo");
+		    String  accNo= (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].subName");
+		    String subId = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].subId");
+		    qrBook.setPayee_info_name(name);
+		    qrBook.setPayee_info_id(id);
+		    qrBook.setPayee_info_mercat_code(merCatCode);
+		    qrBook.setPayee_info_term_id(termId);
+		    qrBook.setPayee_info_sub_name(subName);
+		    qrBook.setPayee_info_acc_no(accNo);
+		    qrBook.setPayee_info_sub_id(subId);
+
+		}
+
+	}
+    /**
+     * @param tpID
+     * @param qrBook
+     * @param platDate
+     * @param seqNo
+     * @return
+     * @throws Exception 
+     * @throws NumberFormatException 
+     */
+    public static int qrBookData(String tpID, QrBook qrBook, String platDate, int seqNo) throws NumberFormatException, Exception {
+    	//对于qrBook中String的属性，循环取OBJ_QRUP_ALL中对应值 对其 赋值
+    	String[] elements = {"acqCode","addnOpUrl","backUrl","certId","comInfo","couponInfo","currencyCode","encryptCertId",
+    			"invoiceSt","issCode","merCatCode","merId","merName","orderDetails","orderNo","orderTime",
+    			"orderType","origOrderNo","origOrderTime","origReqType","origRespCode","origRespMsg","payeeComments",
+    			"payerComments","qrType","reqReserved","riskInfo","reqType","respCode","respMsg","specFeeInfo","settleDate",
+    			"settleKey","termId","txnNo","upReserved","version","voucherNum","signCheckFlag"};
+    	for (int i = 0; i < elements.length; i++) {
+    		String elementName = elementFormate(elements[i]);
+    		String value =(String) EPOper.get(tpID, "OBJ_QRUP_ALL[0]."+elements[i]);
+    		if(value != null && !value.trim().isEmpty()) {//不为空时进行赋值
+    			Class clazz = Class.forName("com.adtec.ncps.busi.qrps.bean.QrBook");
+//    			QrBook demo = (QrBook)clazz.newInstance();
+    			Field f = clazz.getDeclaredField(elementName);
+    			f.setAccessible(true);
+    			f.set(qrBook,value);
+    		}
+		}
+    	
+		qrBook.setPlat_date(platDate);
+		qrBook.setSeq_no(seqNo);
+		String limitCount = (String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].limitCount");
+		if (!StringUtils.isEmpty(limitCount)) {
+			qrBook.setLimit_count(Long.valueOf(limitCount));
+		}
+		String origTxnAmt = (String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].origTxnAmt");
+		if (!StringUtils.isEmpty(origTxnAmt)) {
+		    qrBook.setOrig_txn_amt(Double.valueOf(origTxnAmt));
+		}
+		String paymentValidTime = (String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].paymentValidTime");
+		if (!StringUtils.isEmpty(paymentValidTime)) {
+		    qrBook.setPayment_valid_time(Long.valueOf(paymentValidTime));
+		}
+		String qrCode = (String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].qrCode");
+		if (StringUtils.isEmpty(qrCode)) {
+		    qrBook.setQr_code((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].qrNo"));
+		} else {
+		    qrBook.setQr_code(qrCode);
+		}
+		String qrValidTime = (String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].qrValidTime");
+		if (!StringUtils.isEmpty(qrValidTime)) {
+		    qrBook.setQr_valid_time(Long.valueOf(qrValidTime));
+		}
+		String txnAmt = (String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].txnAmt");
+		if (!StringUtils.isEmpty(txnAmt)) {
+		    qrBook.setTxn_amt(Double.valueOf(AmountUtils.changeF2Y(txnAmt)));
+		}
+//	qrBook.setAcq_code((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].acqCode"));
+//	qrBook.setAddn_opurl((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].addnOpUrl"));
+//	qrBook.setBack_url((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].backUrl"));
+//	qrBook.setCert_id((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].certId"));
+//	qrBook.setCom_info((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].comInfo"));
+//	qrBook.setCoupon_info((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].couponInfo"));
+//	qrBook.setCurrency_code((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].currencyCode"));
+//	qrBook.setEncrypt_cert_id((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].encryptCertId"));
+//	qrBook.setInvoice_info_id((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].invoiceInfo"));
+//	qrBook.setInvoice_st((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].invoiceSt"));
+//	qrBook.setIss_code((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].issCode"));
+//	qrBook.setMercat_code((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].merCatCode"));
+//	qrBook.setMer_id((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].merId"));
+//	qrBook.setMer_name((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].merName"));
+//	qrBook.setOrder_details((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].orderDetails"));
+//	qrBook.setOrder_no((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].orderNo"));
+//	qrBook.setOrder_time((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].orderTime"));
+//	qrBook.setOrder_type((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].orderType"));
+//	qrBook.setOrig_order_no((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].origOrderNo"));
+//	qrBook.setOrig_order_time((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].origOrderTime"));
+//	qrBook.setOrig_req_type((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].origReqType"));
+//	qrBook.setOrig_resp_code((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].origRespCode"));
+//	qrBook.setOrig_resp_msg((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].origRespMsg"));
+//	qrBook.setPayee_comments((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].payeeComments"));
+////	qrBook.setPayee_info_mercat_code((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].payeeInfo"));
+//	qrBook.setPayer_comments((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].payerComments"));
+////	qrBook.setPayer_info_acc_no((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].payerInfo"));
+//	qrBook.setQr_type((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].qrType"));
+//	qrBook.setReq_reserved((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].reqReserved"));
+//	qrBook.setRisk_info((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].riskInfo"));
+//	qrBook.setReq_type((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].reqType"));
+//	qrBook.setResp_code((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].respCode"));
+//	qrBook.setResp_msg((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].respMsg"));
+//	qrBook.setSpec_fee_info((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].specFeeInfo"));
+//	qrBook.setSettle_date((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].settleDate"));
+//	qrBook.setSettle_key((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].settleKey"));
+//	qrBook.setSign_chk_flag((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].signature"));
+//	qrBook.setTerm_id((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].termId"));
+//	qrBook.setTxn_no((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].txnNo"));
+//	qrBook.setUp_reserved((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].upReserved"));
+//	qrBook.setVersion((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].version"));
+//	qrBook.setVoucher_num((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].voucherNum"));
+//	qrBook.setSign_chk_flag((String) EPOper.get(tpID, "OBJ_QRUP_ALL[0].signCheckFlag"));
+
+	return 0;
+    }
+
+    /**
+     * 将element格式转换为QrBook中对应的属性对应
+     * @param string
+     * @return
+     */
+    private static String elementFormate(String element) {
+    	String flag = "";
+    	
+    	//数据库设计时，没有完全和8583报文匹配，针对特殊情况，可在goal 中配置
+    	String[] goal = {"sign_chk_flag:signCheckFlag"};
+    	for(int j= 0 ; j< goal.length ; j++) {
+    		String[] split = goal[j].split(":");
+    		if(element.equals(split[1])) {
+    			return split[0];
+    		}
+    	} 
+    	
+    	for (int i = 0; i < element.length(); i++) {
+    		if(element.charAt(i) >= 65 && element.charAt(i) <= 90) {//是否为大写字母
+    			flag =flag + "_"+element.charAt(i);
+    		}else {
+    			flag =flag +element.charAt(i);
+    		}
+    	}
+    	
+		return flag.toLowerCase();
+	}
+	public static int initResFmt() throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String szTpID = dtaInfo.getTpId();
+
+//	String svcName = (String) EPOper.get(szTpID, "__GDTA_FORMAT[0].__GDTA_SVCNAME[0]");
+//	SysPub.appLog("INFO", "服务逻辑名称:%s", svcName);
+//
+//	String reqFmtObjNm = null;
+//	String resFmtObjNm = null;
+//	if (!"BS0210000903".equals(svcName)) {
+//	    reqFmtObjNm = "OBJ_QRUP_ALL[0].";
+//	    resFmtObjNm = "OBJ_QRUP_ALL[0].";
+//	} else {
+//	    reqFmtObjNm = "OBJ_" + svcName + "_REQ[0].";
+//	    resFmtObjNm = "OBJ_" + svcName + "_RES[0].";
+//	}
+//
+//	EPOper.put(szTpID, resFmtObjNm + "version", SDKConstants.VERSION_1_0_0);
+//	EPOper.put(szTpID, resFmtObjNm + "signature", "0");
+//	EPOper.copy(szTpID, szTpID, reqFmtObjNm + "certId", resFmtObjNm + "certId");
+//	EPOper.copy(szTpID, szTpID, reqFmtObjNm + "reqType", resFmtObjNm + "reqType");
+//	EPOper.copy(szTpID, szTpID, reqFmtObjNm + "issCode", resFmtObjNm + "issCode");
+//	EPOper.put(szTpID, resFmtObjNm + "respCode", "99");
+//	EPOper.put(szTpID, resFmtObjNm + "respMsg", "初始化错误信息");
+
+	return 0;
+    }
+
+    /**
+     * @Description: 将报文数据元素中的Base64编码的数据转换到对象中
+     * @author Q
+     * @param origData
+     * @param type
+     *            COUPONINFO优惠信息等
+     * @return
+     * @throws Exception
+     * @date 2018年1月4日下午5:44:45
+     */
+    public static int parsBase64Json2Ele(String origData, String type, String svrReq) throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	if (origData == null || StringUtils.isBlank(origData) || type == null || StringUtils.isBlank(type)) {
+	    SysPub.appLog("ERROR", "要转换的数据或类型为空");
+	    return -1;
+	}
+
+	// 将base64字符串转换为原字符串
+	String resultData = SignService.base64Decode(origData, SDKConstants.UTF_8_ENCODING);
+	SysPub.appLog("INFO", "将要解析的字符串：%s", resultData);
+
+	// payerInfo付款方信息PAYERINFO
+	if ("COUPONINFO".equals(type.toUpperCase())) {// couponInfo优惠信息
+	    // 将字符串解析到json对象中
+	    JSONArray jsonArray = JSON.parseArray(resultData);
+	    for (Object jsonObject : jsonArray) {
+		CouponInfo couponInfo = JSONObject.parseObject(jsonObject.toString(), CouponInfo.class);
+
+		String cType = couponInfo.getType();
+		String spnsrId = couponInfo.getSpnsrId();
+		String offstAmt = couponInfo.getOffstAmt();
+		String id = couponInfo.getId();
+		String desc = couponInfo.getDesc();
+		String addnInfo = couponInfo.getAddnInfo();
+
+		SysPub.appLog("INFO", "type[%s]spnsrId [%s]offstAmt[%s] id[%s] desc[%s] addnInfo[%s]", type, spnsrId,
+			offstAmt, id, desc, addnInfo);
+
+		if (cType != null && cType.length() > 0) {
+		    EPOper.put(tpID, "COUPONINFO[0].type", cType);
+		}
+		if (spnsrId != null && spnsrId.length() > 0) {
+		    EPOper.put(tpID, "COUPONINFO[0].spnsrId", spnsrId);
+		}
+		if (offstAmt != null && offstAmt.length() > 0) {
+		    EPOper.put(tpID, "COUPONINFO[0].offstAmt", offstAmt);
+		}
+		if (id != null && id.length() > 0) {
+		    EPOper.put(tpID, "COUPONINFO[0].id", id);
+		}
+		if (desc != null && desc.length() > 0) {
+		    EPOper.put(tpID, "COUPONINFO[0].desc", desc);
+		}
+		if (addnInfo != null && addnInfo.length() > 0) {
+		    EPOper.put(tpID, "COUPONINFO[0].addnInfo", addnInfo);
+		}
+	    }
+	}
+
+	return 0;
+    }
+
+    /**
+     * @Description: 将报文数据元素中的Base64编码的payerInfo转换到对象PAYERINFO中
+     * @author Q
+     * @param eleName
+     *            存放base64编码的信息
+     * @param type
+     *            取值有payerInfo、riskInfo、addnCond
+     * @return
+     * @throws Exception
+     * @date 2017年12月16日下午10:05:52
+     */
+    public static int parsBase64Info2Ele(String origData, String type, String svrReq) throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	if (origData == null || StringUtils.isBlank(origData) || type == null || StringUtils.isBlank(type)) {
+	    SysPub.appLog("ERROR", "要转换的数据或类型为空");
+	    return -1;
+	}
+
+	// 将base64字符串转换为原字符串
+	String resultData = SignService.base64Decode(origData, SDKConstants.UTF_8_ENCODING);
+	SysPub.appLog("INFO", "将要解析的字符串：%s", resultData);
+	// 将字符串解析到map中
+	Map<String, String> resultMap = SDKUtil.convertResultStringToMap(resultData);
+	// payerInfo付款方信息PAYERINFO
+	if ("PAYERINFO".equals(type.toUpperCase())) {
+	    String accNo = resultMap.get("accNo");
+	    String name = resultMap.get("name");
+	    String payerBankInfo = resultMap.get("payerBankInfo");
+	    String issCode = resultMap.get("issCode");
+	    String acctClass = resultMap.get("acctClass");
+	    String certifTp = resultMap.get("certifTp");
+	    String certifId = resultMap.get("certifId");
+	    String cvn2 = resultMap.get("cvn2");
+	    String expired = resultMap.get("expired");
+	    String cardAttr = resultMap.get("cardAttr");
+	    String mobile = resultMap.get("mobile");
+
+	    if (accNo != null && accNo.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].accNo", resultMap.get("accNo"));
+	    }
+	    if (name != null && name.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].name", resultMap.get("name"));
+	    }
+	    if (payerBankInfo != null && payerBankInfo.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].payerBankInfo", resultMap.get("payerBankInfo"));
+	    }
+	    if (issCode != null && issCode.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].issCode", resultMap.get("issCode"));
+	    }
+	    if (acctClass != null && acctClass.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].acctClass", resultMap.get("acctClass"));
+	    }
+	    if (certifTp != null && certifTp.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].certifId", resultMap.get("certifId"));
+	    }
+	    if (certifId != null && certifId.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].certifTp", resultMap.get("certifTp"));
+	    }
+	    if (cvn2 != null && cvn2.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].cvn2", resultMap.get("cvn2"));
+	    }
+	    if (expired != null && expired.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].expired", resultMap.get("expired"));
+	    }
+	    if (cardAttr != null && cardAttr.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].cardAttr", resultMap.get("cardAttr"));
+	    }
+	    if (mobile != null && mobile.length() > 0) {
+		EPOper.put(tpID, "PAYERINFO[0].mobile", resultMap.get("mobile"));
+	    }
+	} else if ("RISKINFO".equals(type.toUpperCase())) {// riskInfo风控信息RISKINFO
+	    String deviceID = resultMap.get("deviceID");
+	    String deviceType = resultMap.get("deviceType");
+	    String mobile = resultMap.get("mobile");
+	    String accountIdHash = resultMap.get("accountIdHash");
+	    String sourceIP = resultMap.get("sourceIP");
+	    String DeviceLocation = resultMap.get("DeviceLocation");
+	    String fullDeviceNumber = resultMap.get("fullDeviceNumber");
+	    String captureMethod = resultMap.get("captureMethod");
+	    String deviceSimNumber = resultMap.get("deviceSimNumber");
+	    String deviceLanguage = resultMap.get("deviceLanguage");
+	    String deviceName = resultMap.get("deviceName");
+	    String usrRgstrDt = resultMap.get("usrRgstrDt");
+	    String accountEmailLife = resultMap.get("accountEmailLife");
+	    String cardHolderName = resultMap.get("cardHolderName");
+	    String billingAddress = resultMap.get("billingAddress");
+	    String billingZip = resultMap.get("billingZip");
+	    String riskScore = resultMap.get("riskScore");
+	    String riskStandardVersion = resultMap.get("riskStandardVersion");
+	    String deviceScore = resultMap.get("deviceScore");
+	    String accountScore = resultMap.get("accountScore");
+	    String phoneNumberScore = resultMap.get("phoneNumberScore");
+	    String riskReasonCode = resultMap.get("riskReasonCode");
+	    String applyChannel = resultMap.get("applyChannel");
+	    
+	    SysPub.appLog("INFO", "deviceID：%s", deviceID);
+	    SysPub.appLog("INFO", "deviceType：%s", deviceType);
+	    SysPub.appLog("INFO", "mobile：%s", mobile);
+	    SysPub.appLog("INFO", "accountIdHash：%s", accountIdHash);
+	    SysPub.appLog("INFO", "sourceIP：%s", sourceIP);
+	    SysPub.appLog("INFO", "DeviceLocation：%s", DeviceLocation);
+	    SysPub.appLog("INFO", "fullDeviceNumber：%s", fullDeviceNumber);
+	    SysPub.appLog("INFO", "captureMethod：%s", captureMethod);
+	    SysPub.appLog("INFO", "deviceSimNumber：%s", deviceSimNumber);
+	    SysPub.appLog("INFO", "deviceLanguage：%s", deviceLanguage);
+	    SysPub.appLog("INFO", "deviceName：%s", deviceName);
+	    SysPub.appLog("INFO", "usrRgstrDt：%s", usrRgstrDt);
+	    SysPub.appLog("INFO", "accountEmailLife：%s", accountEmailLife);
+	    SysPub.appLog("INFO", "cardHolderName：%s", cardHolderName);
+	    SysPub.appLog("INFO", "billingAddress：%s", billingAddress);
+	    SysPub.appLog("INFO", "billingZip：%s", billingZip);
+	    SysPub.appLog("INFO", "riskScore：%s", riskScore);
+	    SysPub.appLog("INFO", "riskStandardVersion：%s", riskStandardVersion);
+	    SysPub.appLog("INFO", "deviceScore：%s", deviceScore);
+	    SysPub.appLog("INFO", "accountScore：%s", accountScore);
+	    SysPub.appLog("INFO", "phoneNumberScore：%s", phoneNumberScore);
+	    SysPub.appLog("INFO", "riskReasonCode：%s", riskReasonCode);
+	    SysPub.appLog("INFO", "applyChannel：%s", applyChannel);
+
+	    if (deviceID != null && deviceID.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].deviceID", deviceID);
+	    }
+	    if (deviceType != null && deviceType.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].deviceType", deviceType);
+	    }
+	    if (mobile != null && mobile.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].mobile", mobile);
+	    }
+	    if (accountIdHash != null && accountIdHash.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].accountIdHash", accountIdHash);
+	    }
+	    if (sourceIP != null && sourceIP.length() > 4) {
+		EPOper.put(tpID, "RISKINFO[0].sourceIP", sourceIP);
+	    }
+	    if (DeviceLocation != null && DeviceLocation.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].DeviceLocation", DeviceLocation);
+	    }
+	    if (fullDeviceNumber != null && fullDeviceNumber.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].fullDeviceNumber", fullDeviceNumber);
+	    }
+	    if (captureMethod != null && captureMethod.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].captureMethod", captureMethod);
+	    }
+	    if (deviceSimNumber != null && deviceSimNumber.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].deviceSimNumber", deviceSimNumber);
+	    }
+	    if (deviceLanguage != null && deviceLanguage.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].deviceLanguage", deviceLanguage);
+	    }
+	    if (deviceName != null && deviceName.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].deviceName", deviceName);
+	    }
+	    if (usrRgstrDt != null && usrRgstrDt.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].usrRgstrDt", usrRgstrDt);
+	    }
+	    if (accountEmailLife != null && accountEmailLife.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].accountEmailLife", accountEmailLife);
+	    }
+	    if (cardHolderName != null && cardHolderName.length() > 0) {
+		EPOper.put(tpID,"RISKINFO[0].cardHolderName", cardHolderName);
+	    }
+	    if (billingAddress != null && billingAddress.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].billingAddress", billingAddress);
+	    }
+	    if (billingZip != null && billingZip.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].billingZip", billingZip);
+	    }
+	    if (riskScore != null && riskScore.length() > 0) {
+		EPOper.put(tpID,"RISKINFO[0].riskScore", riskScore);
+	    }
+	    if (riskStandardVersion != null && riskStandardVersion.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].riskStandardVersion", riskStandardVersion);
+	    }
+	    if (deviceScore != null && deviceScore.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].deviceScore", deviceScore);
+	    }
+	    if (accountScore != null && accountScore.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].accountScore", accountScore);
+	    }
+	    if (phoneNumberScore != null && phoneNumberScore.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].phoneNumberScore", phoneNumberScore);
+	    }
+	    if (riskReasonCode != null && riskReasonCode.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0].riskReasonCode", riskReasonCode);
+	    }
+	    if (applyChannel != null && applyChannel.length() > 0) {
+		EPOper.put(tpID, "RISKINFO[0][0].applyChannel", applyChannel);
+	    }
+
+	} else if ("ADDNCOND".equals(type.toUpperCase())) {// addnCond附加处理条件ADDNCOND
+	    String currency = resultMap.get("currency");
+	    String pinFreeStr = resultMap.get("pinFree");
+	    int pinFree = Integer.parseInt(pinFreeStr);
+	    String maxAmontStr = resultMap.get("maxAmont");
+	    int maxAmont = Integer.parseInt(maxAmontStr);
+	    SysPub.appLog("INFO", "%s, %s, %s", currency, pinFreeStr, maxAmontStr);
+	    if (currency != null && currency.length() > 0) {
+		EPOper.put(tpID, svrReq+"ADDNCOND[0].currency", currency);
+	    }
+	    if (pinFree > 0) {
+		SysPub.appLog("INFO", "pinFree");
+		EPOper.put(tpID, svrReq+"ADDNCOND[0].pinFree", pinFreeStr);
+	    }
+	    if (maxAmont > 0) {
+		SysPub.appLog("INFO", "maxAmontStr");
+		EPOper.put(tpID, svrReq+"ADDNCOND.maxAmont", maxAmontStr);
+	    }
+	    SysPub.appLog("INFO", "%s, %d, %d", currency, pinFree, maxAmont);
+
+	} else if ("TRANSADDNINFO".equals(type.toUpperCase())) {// TRANSADDNINFO附加交易信息
+	    String merId = resultMap.get("merId");
+	    String merName = resultMap.get("merName");
+	    String acqCode = resultMap.get("acqCode");
+	    if (merId != null && merId.length() > 0) {
+		EPOper.put(tpID, "TRANSADDNINFO[0].merId", merId);
+	    }
+	    if (acqCode != null && acqCode.length() > 0) {
+		EPOper.put(tpID, "TRANSADDNINFO[0].acqCode", acqCode);
+	    }
+	    if (merName != null && merName.length() > 0) {
+		EPOper.put(tpID, "TRANSADDNINFO[0].merName", merName);
+	    }
+	    SysPub.appLog("INFO", "%s, %s, %s", merId, merName, acqCode);
+	} else if ("PAYEEINFO".equals(type.toUpperCase())) {// PAYEEINFO收款方信息
+	    String merCatCode = resultMap.get("merCatCode");
+	    String id = resultMap.get("id");
+	    String name = resultMap.get("name");
+	    String termId = resultMap.get("termId");
+	    String accNo = resultMap.get("accNo");
+	    String subId = resultMap.get("subId");
+	    String subName = resultMap.get("subName");
+	    if (merCatCode != null && merCatCode.length() > 0) {
+		EPOper.put(tpID, "PAYEEINFO[0].merCatCode", merCatCode);
+	    }
+	    if (id != null && id.length() > 0) {
+		EPOper.put(tpID, "PAYEEINFO[0].id", id);
+	    }
+	    if (name != null && name.length() > 0) {
+		EPOper.put(tpID, "PAYEEINFO[0].name", name);
+	    }
+	    if (termId != null && termId.length() > 0) {
+		EPOper.put(tpID, "PAYEEINFO[0].termId", termId);
+	    }
+	    if (accNo != null && accNo.length() > 0) {
+		EPOper.put(tpID, "PAYEEINFO[0].accNo", accNo);
+	    }
+	    if (subId != null && subId.length() > 0) {
+		EPOper.put(tpID, "PAYEEINFO[0].subId", subId);
+	    }
+	    if (subName != null && subName.length() > 0) {
+		EPOper.put(tpID, "PAYEEINFO[0].subName", subName);
+	    }
+	} else if ("COUPONINFO".equals(type.toUpperCase())) {// couponInfo优惠信息
+	    String cType = resultMap.get("type");
+	    String spnsrId = resultMap.get("spnsrId");
+	    String offstAmt = resultMap.get("offstAmt");
+	    String id = resultMap.get("id");
+	    String desc = resultMap.get("desc");
+	    String addnInfo = resultMap.get("addnInfo");
+
+	    if (cType != null && cType.length() > 0) {
+		EPOper.put(tpID, "COUPONINFO[0].type", cType);
+	    }
+	    if (spnsrId != null && spnsrId.length() > 0) {
+		EPOper.put(tpID, "COUPONINFO[0].spnsrId", spnsrId);
+	    }
+	    if (offstAmt != null && offstAmt.length() > 0) {
+		EPOper.put(tpID, "COUPONINFO[0].offstAmt", offstAmt);
+	    }
+	    if (id != null && id.length() > 0) {
+		EPOper.put(tpID, "COUPONINFO[0].id", id);
+	    }
+	    if (desc != null && desc.length() > 0) {
+		EPOper.put(tpID, "COUPONINFO[0].desc", desc);
+	    }
+	    if (addnInfo != null && addnInfo.length() > 0) {
+		EPOper.put(tpID, "COUPONINFO[0].addnInfo", addnInfo);
+	   }
+	 }else if ("INVOICEINFO".equals(type.toUpperCase())) {// invoiceinfo发票信息
+		    String id = resultMap.get("id");
+		    String amount = resultMap.get("amount");
+		    
+
+		    if (id  != null && id .length() > 0) {
+			EPOper.put(tpID, "INVOICEINFO[0].id", id);
+		    }
+		    if (amount != null && amount.length() > 0) {
+			EPOper.put(tpID, "INVOICEINFO[0].amount", amount);
+		    }
+	 }
+		    
+	return 0;
+		    
+    }
+
+    /**
+     * @Description: 数据对象的内容转换到key1=value1&key2=value2...base64字符串
+     * @author Q
+     * @param type
+     * @param urlEncode
+     *            是否要url编码
+     * @return
+     * @throws Exception
+     * @date 2017年12月17日下午8:57:07
+     */
+    public static String parsEle2Base64Info(String type, boolean urlEncode, String svrReq) throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	if (type == null || StringUtils.isBlank(type)) {
+	    SysPub.appLog("ERROR", "要转换的数据或类型为空");
+	    return null;
+	}
+
+	Map<String, String> dataMap = new HashMap<String, String>();
+	// 将字符串解析到map中
+	// Map<String, String> resultMap =
+	// SDKUtil.convertResultStringToMap(resultData);
+	// payerInfo付款方信息PAYERINFO
+	if ("PAYERINFO".equals(type.toUpperCase())) {
+	    String accNo = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].accNo");
+	    String name = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].name");
+	    String payerBankInfo = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].payerBankInfo");
+	    String issCode = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].issCode");
+	    String acctClass = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].acctClass");
+	    String certifTp = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].certifTp");
+	    String certifId = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].certifId");
+	    String cvn2 = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].cvn2");
+	    String expired = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].expired");
+	    String cardAttr = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].cardAttr");
+	    String mobile = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payerInfo[0].mobile");
+
+	    if (accNo == null || accNo.trim().length() == 0) {
+		SysPub.appLog("ERROR", "付款人账号不能为空");
+	    }
+	    dataMap.put("accNo", accNo);
+
+	    if (name != null && name.length() > 0) {
+		dataMap.put("name", name);
+	    }
+	    if (payerBankInfo != null && payerBankInfo.length() > 0) {
+		dataMap.put("payerBankInfo", payerBankInfo);
+	    }
+	    if (issCode != null && issCode.length() > 0) {
+		dataMap.put("issCode", issCode);
+	    }
+	    if (acctClass != null && acctClass.length() > 0) {
+		dataMap.put("acctClass", acctClass);
+	    }
+	    if (certifTp != null && certifTp.length() > 0) {
+		dataMap.put("certifTp", certifTp);
+	    }
+	    if (certifId != null && certifId.length() > 0) {
+		dataMap.put("certifId", certifId);
+	    }
+	    if (cvn2 != null && cvn2.length() > 0) {
+		dataMap.put("cvn2", cvn2);
+	    }
+	    if (expired != null && expired.length() > 0) {
+		dataMap.put("expired", expired);
+	    }
+	    if (cardAttr != null && cardAttr.length() > 0) {
+		dataMap.put("cardAttr", cardAttr);
+	    }
+	    if (mobile != null && mobile.length() > 0) {
+		dataMap.put("mobile", mobile);
+	    }
+	} else if ("COUPONINFO".equals(type.toUpperCase())) {//  优惠信息couponInfo
+		String type1 = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].type");
+		String spnsrId = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].spnsrId");
+		String offstAmt = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].offstAmt");
+		String id = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].id");
+		String desc = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].desc");
+		String addnInfo = (String) EPOper.get(tpID, svrReq+"[0].cd[0].couponInfo[0].addnInfo");
+		
+		if (type1 != null && type1.length() > 0) {
+			dataMap.put("type", type1);
+		}
+		if (spnsrId != null && spnsrId.length() > 0) {
+			dataMap.put("spnsrId", spnsrId);
+		}
+		if (offstAmt != null && offstAmt.length() > 0) {
+			dataMap.put("offstAmt", offstAmt);
+		}
+		if (id != null && id.length() > 0) {
+			dataMap.put("id", id);
+		}
+		if (desc != null && desc.length() > 0) {
+			dataMap.put("desc", desc);
+		}
+		if (addnInfo != null && addnInfo.length() > 0) {
+			dataMap.put("addnInfo", addnInfo);
+		}
+	} else if ("RISKINFO".equals(type.toUpperCase())) {// riskInfo风控信息RISKINFO
+	    String deviceID = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceID");
+	    String deviceType = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceType");
+	    String mobile = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].mobile");
+	    String accountIdHash = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].accountIdHash");
+	    String sourceIP = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].sourceIP");
+	    String DeviceLocation = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].DeviceLocation");
+	    String fullDeviceNumber = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].fullDeviceNumber");
+	    String captureMethod = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].captureMethod");
+	    String deviceSimNumber = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceSimNumber");
+	    String deviceLanguage = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceLanguage");
+	    String deviceName = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceName");
+	    String usrRgstrDt = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].usrRgstrDt");
+	    String accountEmailLife = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].accountEmailLife");
+	    String cardHolderName = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].cardHolderName");
+	    String billingAddress = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].billingAddress");
+	    String billingZip = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].billingZip");
+	    String riskScore = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].riskScore");
+	    String riskStandardVersion = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].riskStandardVersion");
+	    String deviceScore = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceScore");
+	    String accountScore = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].accountScore");
+	    String phoneNumberScore = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].phoneNumberScore");
+	    String riskReasonCode = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].riskReasonCode");
+	    String applyChannel = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].applyChannel");
+
+	    if (deviceID != null && deviceID.length() > 0) {
+		dataMap.put("deviceID", deviceID);
+	    }
+	    if (deviceType != null && deviceType.length() > 0) {
+		dataMap.put("deviceType", deviceType);
+	    }
+	    if (mobile != null && mobile.length() > 0) {
+		dataMap.put("mobile", mobile);
+	    }
+	    if (accountIdHash != null && accountIdHash.length() > 0) {
+		dataMap.put("accountIdHash", accountIdHash);
+	    }
+	    if (sourceIP != null && sourceIP.length() > 4) {
+		dataMap.put("sourceIP", sourceIP);
+	    }
+	    if (DeviceLocation != null && DeviceLocation.length() > 0) {
+		dataMap.put("DeviceLocation", DeviceLocation);
+	    }
+	    if (fullDeviceNumber != null && fullDeviceNumber.length() > 0) {
+		dataMap.put("fullDeviceNumber", fullDeviceNumber);
+	    }
+	    if (captureMethod != null && captureMethod.length() > 0) {
+		dataMap.put("captureMethod", captureMethod);
+	    }
+	    if (deviceSimNumber != null && deviceSimNumber.length() > 0) {
+		dataMap.put("deviceSimNumber", deviceSimNumber);
+	    }
+	    if (deviceLanguage != null && deviceLanguage.length() > 0) {
+		dataMap.put("deviceLanguage", deviceLanguage);
+	    }
+	    if (deviceName != null && deviceName.length() > 0) {
+		dataMap.put("deviceName", deviceName);
+	    }
+	    if (usrRgstrDt != null && usrRgstrDt.length() > 0) {
+		dataMap.put("usrRgstrDt", usrRgstrDt);
+	    }
+	    if (accountEmailLife != null && accountEmailLife.length() > 0) {
+		dataMap.put("accountEmailLife", accountEmailLife);
+	    }
+	    if (cardHolderName != null && cardHolderName.length() > 0) {
+		dataMap.put("cardHolderName", cardHolderName);
+	    }
+	    if (billingAddress != null && billingAddress.length() > 0) {
+		dataMap.put("billingAddress", billingAddress);
+	    }
+	    if (billingZip != null && billingZip.length() > 0) {
+		dataMap.put("billingZip", billingZip);
+	    }
+	    if (riskScore != null && riskScore.length() > 0) {
+		dataMap.put("riskScore", riskScore);
+	    }
+	    if (riskStandardVersion != null && riskStandardVersion.length() > 0) {
+		dataMap.put("riskStandardVersion", riskStandardVersion);
+	    }
+	    if (deviceScore != null && deviceScore.length() > 0) {
+		dataMap.put("deviceScore", deviceScore);
+	    }
+	    if (accountScore != null && accountScore.length() > 0) {
+		dataMap.put("accountScore", accountScore);
+	    }
+	    if (phoneNumberScore != null && phoneNumberScore.length() > 0) {
+		dataMap.put("phoneNumberScore", phoneNumberScore);
+	    }
+	    if (riskReasonCode != null && riskReasonCode.length() > 0) {
+		dataMap.put("riskReasonCode", riskReasonCode);
+	    }
+	    if (applyChannel != null && applyChannel.length() > 0) {
+		dataMap.put("riskReasonCode", riskReasonCode);
+	    }
+
+	} else if ("ADDNCOND".equals(type.toUpperCase())) {// addnCond附加处理条件ADDNCOND
+	    String currency = (String) EPOper.get(tpID, svrReq+"[0].cd[0].addnCond[0].currency");
+	    String pinFreeStr = (String) EPOper.get(tpID, svrReq+"[0].cd[0].addnCond[0].pinFree");
+	    int pinFree = Integer.parseInt(pinFreeStr);
+	    String maxAmontStr = (String) EPOper.get(tpID, svrReq+"[0].cd[0].addnCond[0].maxAmont");
+	    int maxAmont = Integer.parseInt(maxAmontStr);
+
+	    if (currency != null && currency.length() > 0) {
+		dataMap.put("currency", currency);
+	    }
+	    if (pinFree > 0) {
+		dataMap.put("pinFree", pinFreeStr);
+	    }
+	    if (maxAmont > 0) {
+		dataMap.put("maxAmont", maxAmontStr);
+	    }
+	} else if ("PAYEEINFO".equals(type.toUpperCase())) {// payeeInfo收款方信息PAYEEINFO
+	    String name = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payeeInfo[0].name");
+	    String id = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].id");
+	    String merCatCode = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].merCatCode");
+	    String termId = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].termId");
+	    String  accNo = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].accNo");
+	    String  subName = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].subName");
+	    String subId = (String) EPOper.get(tpID,  svrReq+"[0].cd[0].payeeInfo[0].subId");
+
+	    if (name != null && name.length() > 0) {
+		dataMap.put("name", name);
+	    }
+	    if (id != null && id.length() > 0) {
+		dataMap.put("id", id);
+	    }
+	    if (merCatCode != null && merCatCode.length() > 0) {
+		dataMap.put("merCatCode", merCatCode);
+	    }
+	    if (termId != null && termId.length() > 0) {
+		dataMap.put("termId", termId);
+	    }
+	    if (subName != null && subName.length() > 0) {
+		dataMap.put("subName", subName);
+	    }
+	    if (subId != null && subId.length() > 0) {
+		dataMap.put("subId", subId);
+	    }
+	    if (accNo != null && accNo.length() > 0) {
+		dataMap.put("accNo", accNo);
+	    }
+	}
+
+	// 将map数据转换为base64字符串
+	if (dataMap.isEmpty()) {
+	    return null;
+	}
+	String resultData = SDKUtil.coverMap2String(dataMap);
+	
+	SysPub.appLog("INFO", resultData);
+	// 将字符串增加{}
+	resultData = SDKConstants.LEFT_BRACE + resultData + SDKConstants.RIGHT_BRACE;
+	SysPub.appLog("INFO", resultData);
+	String base64Data = SignService.base64Encode(resultData, SDKConstants.UTF_8_ENCODING);
+	SysPub.appLog("INFO", base64Data);
+	if (urlEncode) {
+	    base64Data = URLEncoder.encode(base64Data, SDKConstants.UTF_8_ENCODING);
+//	    SysPub.appLog("INFO", base64Data);
+	}
+
+	return base64Data;
+    }
+
+    /**
+     * @Description: 组织银联通讯确认报文
+     * @author Q
+     * @return
+     * @date 2018年1月2日上午11:01:51
+     */
+    public static int putPubRet() {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	EPOper.put(tpID, "OBJ_QRUP_ALL[0].respCode", "00");
+	EPOper.put(tpID, "OBJ_QRUP_ALL[0].respMsg", "交易成功");
+
+	return 0;
+    }
+
+    /**
+     * @Description: 组织银联通讯确认报文
+     * @author Q
+     * @return
+     * @date 2018年1月2日上午11:01:51
+     */
+    public static int putPubRet(String respCode, String respMsg,String svrRes) {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	if (StringUtils.isEmpty(respCode)) {
+	    respCode = "01";
+	    respMsg = "交易失败";
+	}
+
+	EPOper.put(tpID, svrRes+"[0].cd[0].respCode", respCode);
+	EPOper.put(tpID, svrRes+"[0].cd[0].respMsg", respMsg);
+	EPOper.copy(tpID, tpID,svrRes, "OBJ_ALA_abstarct_RES[0].res");
+
+	return 0;
+    }
+
+    /*
+     * @author
+     * 
+     * @createAt 2017年8月8日
+     * 
+     * @version
+     */
+    public static int getPlatSeq() {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	int iSeqNo = PubTool.sys_get_seq();
+	EPOper.put(tpID, "INIT[0].SeqNo", iSeqNo);
+	return 0;
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月17日
+     * 
+     * @version 1.0 获取账户类型（判断贷记卡还是借记卡） card_type为1-4返回
+     * 0-借记卡;card_type为5-6返回5-贷记卡; -1失败
+     */
+    public static int getAcctType(String _szAcctNo) throws Exception {
+	// 获取数据源
+	DataSource ds = DataBaseUtils.getDatasource();
+	DBExecuter executer = new DBExecuter(ds, "", true);
+	PreparedStatement pstmt = null;
+	ResultSet rs = null;
+	try {
+	    // 判断数据合法性，卡号必须大于6位
+	    if (_szAcctNo == null || "".equals(_szAcctNo) || _szAcctNo.length() < 6)
+		return -1;
+	    String sCardBin = _szAcctNo.substring(0, 6);
+	    String sql = "select * from t_card_bin where fit_code = ? ";
+	    try {
+		pstmt = (PreparedStatement) executer.bind(sql);
+		pstmt.setString(1, sCardBin);
+		rs = pstmt.executeQuery();
+		while (rs.next()) {
+		    String card_type = rs.getString("card_type");
+		    if ("1".equals(card_type) || "2".equals(card_type) || "3".equals(card_type)
+			    || "4".equals(card_type))
+			return 0;
+		    else if ("5".equals(card_type) || "6".equals(card_type))
+			return 5;
+		}
+		return -1;
+	    } finally {
+		if (rs != null)
+		    rs.close();
+		if (pstmt != null)
+		    pstmt.close();
+	    }
+	} finally {
+	    if (executer != null)
+		executer.close();
+	}
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月17日
+     * 
+     * @version 1.0 INIT._CARD_TYPE 0-借记卡 5-贷记卡 0-成功 -1-失败
+     */
+    public static int cupGetAcctType(String _szAcctNo) throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	// 获取数据源
+	try {
+	    // 若上一步骤返回失败，本步骤也返回失败
+	    int iRet = SysPub.ChkStep(tpID);
+	    if (-1 == iRet) {
+		return -1;
+	    }
+	    // 判断数据合法性，卡号必须大于6位
+	    if (_szAcctNo == null || "".equals(_szAcctNo) || _szAcctNo.length() < 6) {
+		SysPub.appLog("ERROR", "无效卡号（发卡方无此主账号）");
+		setCupMsg("PB014X01", "无效卡号（发卡方无此主账号）", "2");
+		return -1;
+	    }
+	    int iCardType = getAcctType(_szAcctNo);
+	    if (iCardType == -1) {
+		SysPub.appLog("ERROR", "无效卡号（发卡方无此主账号）");
+		setCupMsg("PB014X01", "无效卡号（发卡方无此主账号）", "2");
+		return -1;
+	    }
+	    EPOper.delete(tpID, "INIT[0]._CARD_TYPE");
+	    String szCardType = Integer.toString(iCardType);
+	    EPOper.put(tpID, "INIT[0]._CARD_TYPE", szCardType);
+	} catch (Exception e) {
+	    throw e;
+	}
+	return 0;
+    }
+
+    /*
+     * @author chenshx
+     * 
+     * @createAt 2017年8月19日
+     * 
+     * @version 1.0 1-使用新的流水号 2-使用登记薄流水号
+     */
+    public static int getAcctInfo(String _szAcctNo, String _szFlag) throws Exception {
+	// 0-借记卡 1-贷记卡
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	// 若上一步骤返回失败，本步骤也返回失败
+	int iRet = SysPub.ChkStep(tpID);
+	if (-1 == iRet) {
+	    return -1;
+	}
+
+	try {
+	    int iSeqNo = 0;
+	    if ("1".equals(_szFlag)) {
+		iSeqNo = (Integer) EPOper.get(tpID, "INIT[0].SeqNo");
+		getPlatSeq();// 获取新的流水号
+	    }
+
+	    String szCardType = (String) EPOper.get(tpID, "INIT[0]._CARD_TYPE");
+	    if ("0".equals(szCardType))// 借记卡
+	    {
+		BusiMsgProc.headHost("S805070");
+		EPOper.put(tpID, "fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].Desc2", "账号信息查询");
+		EPOper.put(tpID, "fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].AcctNo1", _szAcctNo);
+		EPOper.put(tpID, "fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].CheckFlag", "0");
+		EPOper.put(tpID, "fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].IoFlag", "0");
+		EPOper.put(tpID, "fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].Ccy1", "01");// 人民币
+		// 商户代码
+		EPOper.copy(tpID, tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].MrchntInf[0].MrchntNo",
+			"fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].Mid");
+		// 清算日期
+		EPOper.copy(tpID, tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].TrxInf[0].SettlmtDt",
+			"fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].ClearDate");
+		// 核心校验身份信息
+		EPOper.put(tpID, "fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].DealFlg", "1");
+		EPOper.copy(tpID, tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].IDNo",
+			"fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].FeePayAcctName3");
+		EPOper.copy(tpID, tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].RcverNm",
+			"fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].FeePayAcctName4");
+		EPOper.copy(tpID, tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].MobNo",
+			"fmt_CUP_SVR_IN[0].HOST_CLI_S805070_Req[0].FeePayAcctName5");
+		// 调度 核心 S805070服务
+		SysPub.appLog("INFO", "调用S805070服务开始");
+		DtaTool.call("HOST_CLI", "S805070");
+		// 主机信息复制到登记簿中
+		EPOper.copy(tpID, tpID, "fmt_CUP_SVR_OUT[0].HOST_CLI_S805070_Rsp[0].OpenBrc",
+			"T_NCP_BOOK[0].OPEN_BRCH");
+		EPOper.copy(tpID, tpID, "fmt_CUP_SVR_OUT[0].HOST_CLI_S805070_Rsp[0].SerSeqNo",
+			"T_NCP_BOOK[0].HOST_SEQ");
+		EPOper.copy(tpID, tpID, "fmt_CUP_SVR_OUT[0].HOST_CLI_S805070_Rsp[0].TranDate",
+			"T_NCP_BOOK[0].HOST_DATE");
+
+		String szRetCd = (String) EPOper.get(tpID, "fmt_CUP_SVR_OUT[0].HOST_CLI_S805070_Rsp[0].RspCode"); // 响应代码
+		SysPub.appLog("INFO", "S805070响应码[%s]", szRetCd);
+		chanMsg("S805070");
+
+	    } else if ("5".equals(szCardType))// 贷记
+	    {
+		SysPub.appLog("ERROR", "贷记卡暂不支持");
+		setCupMsg("PB040X07", "贷记卡暂不支持", "2");
+		return -1;
+	    }
+
+	    // 还原流水号
+	    if ("1".equals(_szFlag)) {
+		EPOper.put(tpID, "INIT[0].SeqNo", iSeqNo);
+		getPlatSeq();// 获取新的流水号
+	    }
+	} catch (Exception e) {
+	    throw e;
+	}
+	return 0;
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月23日
+     * 
+     * @version 1.0 查询账户信息 返回值：成功 0,失败 -1
+     */
+    public static String acctLmtChk(String szAcctNo) throws Exception {
+	// 获取数据源
+	DataSource ds = DataBaseUtils.getDatasource();
+	DBExecuter executer = new DBExecuter(ds, "", true);
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	try {
+	    PreparedStatement pstmt = null, pstmp2 = null;
+	    ResultSet rs = null, rs2 = null;
+	    String sql = "select acct_no,amt_day,amt_mon,num_day,num_mon from t_acct_lmt_tot where acct_no='?";
+	    String sql1 = "select lmt_amt,lmt_amt_day,lmt_amt_mon,lmt_num_day,lmt_num_mon from t_acct_lmt where acct_no=?";
+	    try {
+		pstmt = (PreparedStatement) executer.bind(sql);
+		pstmt.setString(1, szAcctNo);
+		rs = pstmt.executeQuery();
+		double amt_day = 0.0, amt_mon = 0.0;
+		int num_day = 0, num_mon = 0;
+		if (rs.next()) {
+		    String acct_no = rs.getString("acct_no");
+		    amt_day = rs.getDouble("amt_day");// 日累计发生额
+		    amt_mon = rs.getDouble("amt_mon");// 月累计发生额
+		    num_day = rs.getInt("num_day");// 日累计交易次数
+		    num_mon = rs.getInt("num_mon");// 月累计交易次数
+		    if (acct_no != null && !"".equals(acct_no))
+			EPOper.put(tpID, "_INIT[0]._LMT_ACCT_FLG", "1");
+		    else
+			EPOper.put(tpID, "_INIT[0]._LMT_ACCT_FLG", "0");
+		} else {
+		    EPOper.put(tpID, "_INIT[0]._LMT_ACCT_FLG", "0");
+		}
+		pstmp2 = (PreparedStatement) executer.bind(sql1);
+		pstmp2.setString(1, szAcctNo);
+		rs2 = pstmt.executeQuery();
+		if (rs.next()) {
+		    double lmt_amt = rs2.getDouble("lmt_amt");// 单笔限额
+		    double lmt_amt_day = rs2.getDouble("lmt_amt_day");// 日限额
+		    double lmt_amt_mon = rs2.getDouble("lmt_amt_mon");// 月限额
+		    int lmt_num_day = rs2.getInt("lmt_amt_mon");// 日交易次数限制
+		    int lmt_num_mon = rs2.getInt("lmt_num_mon");// 月交易次数限制
+		    double TrxAmt = (Double) EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].TrxInf[0].TrxAmt");// 交易金额
+		    if (Double.compare(TrxAmt, lmt_amt) > 0 && Double.compare(lmt_amt, 0) > 0) {
+			setCupMsg("00011", "付款账户单笔交易金额超过付款行限制", "2");
+			return "-1";
+		    }
+		    if (num_day > lmt_num_day) {
+			setCupMsg("00011", "付款账户当日累计交易次数超过付款行限制", "2");
+			return "-1";
+		    }
+		    if (num_mon > lmt_num_mon) {
+			setCupMsg("00011", "付款账户当月交易次数超过付款行限制", "2");
+			return "-1";
+		    }
+		    if (Double.compare(amt_day, lmt_amt_day) > 0) {
+			setCupMsg("00011", "付款账户当日交易金额超过付款行限制", "12");
+			return "-1";
+		    }
+		    if (Double.compare(TrxAmt + amt_mon, lmt_amt_mon) > 0) {
+			setCupMsg("00011", "付款账户当月累计交易金额超过付款行限制", "2");
+			return "-1";
+		    }
+		} else
+		    return "0";
+	    } finally {
+		if (rs != null)
+		    rs.close();
+		if (rs2 != null)
+		    rs2.close();
+		if (pstmt != null)
+		    pstmt.close();
+		if (pstmp2 != null)
+		    pstmp2.close();
+	    }
+	} finally {
+	    if (executer != null)
+		executer.close();
+	}
+	return "0";
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月23日
+     * 
+     * @version 1.0 机构限额检查：成功 0,失败 -1
+     */
+    public static String brchLmtChk(String szBrchNo) throws Exception {
+	// 获取数据源
+	DataSource ds = DataBaseUtils.getDatasource();
+	DBExecuter executer = new DBExecuter(ds, "", true);
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	if (szBrchNo == null || "".equals(szBrchNo.trim()))
+	    return "-1";
+	try {
+	    PreparedStatement pstmt = null, pstmp2 = null;
+	    ResultSet rs = null, rs2 = null;
+	    String sql = "select brch_no,num_day,amt_day from t_brch_lmt_tot where brch_no= ? ";
+	    String sql1 = "select brch_no,lmt_num_day,lmt_amt_day from t_brch_lmt where brch_no='" + szBrchNo + "'";
+	    try {
+		pstmt = (PreparedStatement) executer.bind(sql);
+		pstmt.setString(1, szBrchNo);
+		rs = pstmt.executeQuery();
+		double amt_day = 0.0;
+		int num_day = 0;
+		if (rs.next()) {
+		    amt_day = rs.getDouble("amt_day");// 日累计发生额
+		    num_day = rs.getInt("num_day");// 日累计交易次数
+		    EPOper.put(tpID, "_INIT[0]._LMT_BRCH_FLG", "1");
+
+		} else {
+		    EPOper.put(tpID, "_INIT[0]._LMT_BRCH_FLG", "0");
+		}
+		pstmp2 = (PreparedStatement) executer.bind(sql1);
+		pstmp2.setString(1, szBrchNo);
+		rs2 = pstmt.executeQuery();
+		if (rs.next()) {
+		    double lmt_amt_day = rs2.getDouble("lmt_amt_day");// 日累计限额
+		    int lmt_num_day = rs2.getInt("lmt_num_day");// 日累计交易限制次数
+		    double TrxAmt = (Double) EPOper.get(tpID, "fmt_CUP_SVR_IN.Rsp_Body[0].TrxInf[0].TrxAmt");// 交易金额
+		    if (num_day >= lmt_num_day) {
+			setCupMsg("00011", "支付机构当日交易次数超过付款行限制", "2");
+			return "-1";
+		    }
+		    if (Double.compare(TrxAmt + amt_day, lmt_amt_day) > 0) {
+			setCupMsg("00011", "付款账户当月累计交易金额超过付款行限制", "2");
+			return "-1";
+		    }
+		} else
+		    return "-1";
+	    } finally {
+		if (rs != null)
+		    rs.close();
+		if (rs2 != null)
+		    rs2.close();
+		if (pstmt != null)
+		    pstmt.close();
+		if (pstmp2 != null)
+		    pstmp2.close();
+	    }
+	} finally {
+	    if (executer != null)
+		executer.close();
+	}
+	return "0";
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月23日
+     * 
+     * @version 1.0 账号服务错误次数检查：成功 0,失败 -1
+     */
+    public static String acctSvcFailChk(String szAcctNo) throws Exception {
+	// 获取数据源
+	DataSource ds = DataBaseUtils.getDatasource();
+	DBExecuter executer = new DBExecuter(ds, "", true);
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	String svcName = dtaInfo.getSvcName();
+	if (szAcctNo == null || "".equals(szAcctNo.trim()))
+	    return "-1";
+	try {
+	    PreparedStatement pstmt = null;
+	    ResultSet rs = null;
+	    String sql = "select amt_day,amt_mon,num_day,num_mon,num_fail1,num_fail2,num_fail3,num_fail4 from t_acct_lmt_tot where acct_no= ? ";
+	    try {
+		pstmt = (PreparedStatement) executer.bind(sql);
+		pstmt.setString(1, szAcctNo);
+		rs = pstmt.executeQuery();
+		if (rs.next()) {
+		    EPOper.put(tpID, "_INIT[0]._LMT_BRCH_FLG", "1");
+		    int _ACCT_FAIL_NUM = (Integer) EPOper.get(tpID, "_INIT[0]._ACCT_FAIL_NUM");
+		    // 根据不同交易类型判断
+		    if ("SACCT0021001".equals(svcName))// 协议支付
+		    {
+			int num_fail = rs.getInt("num_fail");
+			if (num_fail > _ACCT_FAIL_NUM) {
+			    setCupMsg("00011", "协议支付交易错误次数超过收付款行限制", "2");
+			    return "-1";
+			}
+
+		    } else if ("SACCT0021002".equals(svcName))// 直接支付
+		    {
+			int num_fai2 = rs.getInt("num_fail2");
+			if (num_fai2 > _ACCT_FAIL_NUM) {
+			    setCupMsg("00011", "直接支付交易错误次数超过收付款行限制", "2");
+			    return "-1";
+			}
+		    } else if ("SACCT0021003".equals(svcName))// 借记转账
+		    {
+			int num_fai3 = rs.getInt("num_fail3");
+			if (num_fai3 > _ACCT_FAIL_NUM) {
+			    setCupMsg("00011", "借记转账交易错误次数超过收付款行限制", "2");
+			    return "-1";
+			}
+		    } else if ("SACCT0022001".equals(svcName))// 贷记付款
+		    {
+			int num_fai4 = rs.getInt("num_fail4");
+			if (num_fai4 > _ACCT_FAIL_NUM) {
+			    setCupMsg("00011", "借记转账交易错误次数超过收付款行限制", "2");
+			    return "-1";
+			}
+		    }
+		} else {
+		    EPOper.put(tpID, "_INIT[0]._LMT_BRCH_FLG", "0");
+		    return "0";
+		}
+	    } finally {
+		if (rs != null)
+		    rs.close();
+		if (pstmt != null)
+		    pstmt.close();
+	    }
+	} finally {
+	    if (executer != null)
+		executer.close();
+	}
+	return "0";
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月24日
+     * 
+     * @version 1.0 机构服务错误次数检查：成功 0,失败 -1
+     */
+    public static int brchSvcFailChk(String szBrchNo) throws Exception {
+	// 获取数据源
+	DataSource ds = DataBaseUtils.getDatasource();
+	DBExecuter executer = new DBExecuter(ds, "", true);
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	String svcName = dtaInfo.getSvcName();
+	try {
+	    PreparedStatement pstmt = null;
+	    ResultSet rs = null;
+	    // 机构限额统计
+	    String sql = "select amt_day,num_day,num_fail1,num_fail2,num_fail3,num_fail4 from t_brch_lmt_tot where brch_no= ? ";
+	    try {
+		pstmt = (PreparedStatement) executer.bind(sql);
+		pstmt.setString(1, szBrchNo);
+		rs = pstmt.executeQuery();
+		if (rs.next())// 存在记录
+		{
+		    EPOper.put(tpID, "_INIT[0]._LMT_ACCT_FLG[0]", "1");
+		    int _BRCH_FAIL_NUM = (Integer) EPOper.get(tpID, "_INIT[0]._BRCH_FAIL_NUM");
+		    // 机构限额控制
+		    int num_fail = 0;
+		    // 根据不同交易类型判断
+		    if ("SACCT0021001".equals(svcName))// 协议支付
+		    {
+			num_fail = rs.getInt("num_fail1");
+			if (num_fail > _BRCH_FAIL_NUM) {
+			    setCupMsg("00011", "协议支付交易错误次数超过收付款行限制", "2");
+			    return -1;
+			}
+
+		    } else if ("SACCT0021002".equals(svcName))// 直接支付
+		    {
+			num_fail = rs.getInt("num_fail2");
+			if (num_fail > _BRCH_FAIL_NUM) {
+			    setCupMsg("00011", "直接支付交易错误次数超过收付款行限制", "2");
+			    return -1;
+			}
+		    } else if ("SACCT0021003".equals(svcName))// 借记转账
+		    {
+			num_fail = rs.getInt("num_fail3");
+			if (num_fail > _BRCH_FAIL_NUM) {
+			    setCupMsg("00011", "借记转账交易错误次数超过收付款行限制", "2");
+			    return -1;
+			}
+		    } else if ("SACCT0022001".equals(svcName))// 贷记付款
+		    {
+			num_fail = rs.getInt("num_fail4");
+			if (num_fail > _BRCH_FAIL_NUM) {
+			    setCupMsg("00011", "借记转账交易错误次数超过收付款行限制", "2");
+			    return -1;
+			}
+		    }
+		} else// 不存在记录
+		{
+		    EPOper.put(tpID, "_INIT[0]._LMT_BRCH_FLG[0]", "0");
+		    return 0;
+		}
+	    } finally {
+		if (rs != null)
+		    rs.close();
+		if (pstmt != null)
+		    pstmt.close();
+	    }
+	} finally {
+	    if (executer != null)
+		executer.close();
+	}
+	return 0;
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月31日
+     * 
+     * @version 1.0 账号限额更新：成功 0,失败 -1
+     */
+    public static String acctLmtUpt(String szAcctNo) throws Exception {
+	// 获取数据源
+	DataSource ds = DataBaseUtils.getDatasource();
+	DBExecuter executer = new DBExecuter(ds, "", true);
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	String svcName = dtaInfo.getSvcName();
+	// 查询条件为空，报错
+	if (szAcctNo == null || "".equals(szAcctNo.trim()))
+	    return "-1";
+	try {
+	    PreparedStatement pstmt = null;
+	    ResultSet rs = null;
+	    try {
+		String LMT_ACCT_FLG = (String) EPOper.get(tpID, "_INIT[0]._LMT_ACCT_FLG[0]");
+		String ERR_RET = (String) EPOper.get(tpID, "fmt_CUP_SVR_OUT[0].Rsp_Body[0].SysRtnInf[0].SysRtnCd");
+		if ("0".equals(LMT_ACCT_FLG))//
+		{
+		    String sql = " insert into t_acct_lmt_tot (szAcctNo,";
+		    if (!"000000".equals(ERR_RET))// 交易失败
+		    {
+			if ("SACCT0021001".equals(svcName))// 协议支付
+			{
+			    sql += "num_fail1) values( ?,? )";
+			} else if ("SACCT0021002".equals(svcName))// 直接支付
+			{
+			    sql += "num_fail2) values(?,? )";
+			} else if ("SACCT0021003".equals(svcName))// 借记转账
+			{
+			    sql += "num_fail3) values(?,? )";
+			} else if ("SACCT0022001".equals(svcName))// 贷记付款
+			{
+			    sql += "num_fail4) values (?,?)";
+			}
+			Object[] value = { szAcctNo, "1" };
+			DataBaseUtils.execute(sql, value);
+			return "0";
+		    } else if ("000000".equals(ERR_RET))// 交易成功
+		    {
+			double TxnAmt = 0.00;
+			TxnAmt = (Double) EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].TrxInf[0].TrxAmt");
+			sql += "amt_day,num_day,num_mon) value ( ?, ?, ?, ? )";
+			Object[] value = { szAcctNo, TxnAmt, "1", "1" };
+			DataBaseUtils.execute(sql, value);
+			return "0";
+		    }
+		} else if ("1".equals(LMT_ACCT_FLG)) {
+		    String sql = " update t_acct_lmt_tot ";
+		    String querySql = "select amt_day,amt_mon,num_day,num_mon,num_fail1,num_fail2,num_fail3,num_fail4 from t_acct_lmt_tot where acct_no= ?";
+		    pstmt = (PreparedStatement) executer.bind(querySql);
+		    pstmt.setString(1, szAcctNo);
+		    rs = pstmt.executeQuery();
+		    int num_fail1 = 0, num_fail2 = 0, num_fail3 = 0, num_fail4 = 0, num_day = 0, num_mon = 0;
+		    double amt_day = 0.00;
+		    if (rs.next()) {
+			num_fail1 = rs.getInt("num_fail1");
+			num_fail2 = rs.getInt("num_fail2");
+			num_fail3 = rs.getInt("num_fail3");
+			num_fail4 = rs.getInt("num_fail4");
+			num_day = rs.getInt("num_day");
+			num_mon = rs.getInt("num_mon");
+		    }
+		    if (!"000000".equals(ERR_RET))// 交易失败
+		    {
+			Object[] value = new Object[2];
+			if ("SACCT0021001".equals(svcName))// 协议支付
+			{
+			    num_fail1 += 1;
+			    sql += "set num_fail1=?";
+			    value[0] = num_fail1;
+			} else if ("SACCT0021002".equals(svcName))// 直接支付
+			{
+			    num_fail2 += 1;
+			    sql += "set num_fail2=?";
+			    value[0] = num_fail2;
+			} else if ("SACCT0021003".equals(svcName))// 借记转账
+			{
+			    num_fail3 += 1;
+			    sql += "set num_fail3=?";
+			    value[0] = num_fail3;
+			} else if ("SACCT0022001".equals(svcName))// 贷记付款
+			{
+			    num_fail4 += 1;
+			    sql += "set num_fail4=?";
+			    value[0] = num_fail4;
+			}
+			sql += " where acct_no=?";
+			value[1] = szAcctNo;
+			DataBaseUtils.execute(sql, value);
+			return "0";
+		    } else if ("000000".equals(ERR_RET))// 交易成功
+		    {
+			double TxnAmt = 0.00;
+			TxnAmt = (Double) EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].TrxInf[0].TrxAmt");
+			amt_day = TxnAmt + amt_day;
+			num_day = num_day + 1;
+			num_mon = num_mon + 1;
+			sql += "set amt_day= ?,num_day= ?,num_mon= ? where acct_no= ? ";
+			Object[] value = { amt_day, num_day, num_mon, szAcctNo };
+			DataBaseUtils.execute(sql, value);
+			return "0";
+		    }
+		}
+	    } finally {
+		if (rs != null)
+		    rs.close();
+		if (pstmt != null)
+		    pstmt.close();
+	    }
+	} finally {
+	    if (executer != null)
+		executer.close();
+	}
+	return "0";
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月31日
+     * 
+     * @version 1.0 机构限额更新：成功 0,失败 -1
+     */
+    public static String brchLmtUpt(String szBrchNo) throws Exception {
+	// 获取数据源
+	DataSource ds = DataBaseUtils.getDatasource();
+	DBExecuter executer = new DBExecuter(ds, "", true);
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	// 查询条件为空，报错
+	if (szBrchNo == null || "".equals(szBrchNo.trim()))
+	    return "-1";
+	try {
+	    PreparedStatement pstmt = null;
+	    ResultSet rs = null;
+	    try {
+		String LMT_ACCT_FLG = (String) EPOper.get(tpID, "_INIT[0]._LMT_ACCT_FLG[0]");
+		String ERR_RET = (String) EPOper.get(tpID, "fmt_CUP_SVR_OUT[0].Rsp_Body[0].SysRtnInf[0].SysRtnCd");
+		if ("0".equals(LMT_ACCT_FLG))//
+		{
+		    String sql = " insert into t_brch_lmt_tot (brch_no,";
+		    if (!"000000".equals(ERR_RET))// 交易失败
+		    {
+			return "E_FAIL";
+		    } else if ("000000".equals(ERR_RET))// 交易成功
+		    {
+			// double TxnAmt = 0.00;
+			// TxnAmt = (Double) EPOper.get(tpID,
+			// "fmt_CUP_SVR_IN[0].Req_Body[0].TrxInf[0].TrxAmt");
+			sql += "amt_day,num_day) value (?,?,?)";
+			Object[] value = { szBrchNo, szBrchNo, "1" };
+			DataBaseUtils.execute(sql, value);
+			return "0";
+		    }
+		} else if ("1".equals(LMT_ACCT_FLG)) {
+		    String sql = " update t_brch_lmt_tot";
+		    String querySql = "select amt_day,num_day,num_fail1,num_fail2,num_fail3,num_fail4 from t_brch_lmt_tot where brch_no'="
+			    + szBrchNo + "'";
+		    pstmt = (PreparedStatement) executer.bind(querySql);
+		    rs = pstmt.executeQuery();
+		    int num_day = 0;
+		    double amt_day = 0.00;
+		    if (rs.next()) {
+			amt_day = rs.getDouble("amt_day");
+			num_day = rs.getInt("num_day");
+		    }
+		    if (!"000000".equals(ERR_RET))// 交易失败
+		    {
+			return "E_FAIL";
+		    } else if ("000000".equals(ERR_RET))// 交易成功
+		    {
+			double TxnAmt = 0.00;
+			TxnAmt = (Double) EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].TrxInf[0].TrxAmt");
+			amt_day = TxnAmt + amt_day;
+			num_day = num_day + 1;
+			sql += " set amt_day= ?, num_day= ? where brch_no= ?";
+			Object[] value = { amt_day, num_day, szBrchNo };
+			DataBaseUtils.execute(sql, value);
+			return "0";
+		    }
+		}
+	    } finally {
+		if (rs != null)
+		    rs.close();
+		if (pstmt != null)
+		    pstmt.close();
+	    }
+	} finally {
+	    if (executer != null)
+		executer.close();
+	}
+	return "0";
+    }
+
+    /**
+     * @Description: 根据交易类型获取ala服务逻辑的编码
+     * @author Q
+     * @param _reqType
+     * @return
+     * @throws Exception
+     * @date 2017年12月19日下午4:55:43
+     */
+    public static String getAlaTxCode(String _reqType) throws Exception {
+
+	if (_reqType == null || "".equals(_reqType)) {
+	    SysPub.appLog("ERROR", "银联交易类型不能为空");
+	    return null;
+	}
+	String szTxCOde = "";
+
+	if ("01".equals(_reqType.substring(0, 2))) {// 主扫类atm和c2c转账都归结为主扫类
+	    szTxCOde = "ZS" + _reqType;
+	} else if ("02".equals(_reqType.substring(0, 1))) {// 被扫类
+	    szTxCOde = "BS" + _reqType;
+	} else {
+	    SysPub.appLog("ERROR", "不支持的交易类型：%s", _reqType);
+	    throw new Exception("交易类型[" + _reqType + "]错误，请查看原因");
+	}
+	SysPub.appLog("DEBUG", "银联交易类型[%s]行内交易码[%s]", _reqType, szTxCOde);
+	return szTxCOde;
+    }
+
+    /**
+     * @Description: 获取路由表达式
+     * @author Q
+     * @return
+     * @throws Exception
+     * @date 2017年12月19日下午4:54:37
+     */
+    public static String getLogicSvcName() throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String svcName = dtaInfo.getSvcName();
+	String router = getAlaTxCode(svcName);
+	SysPub.appLog("DEBUG", "svcName:%s--router:%s", svcName, router);
+	return router;
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月27日
+     * 
+     * @version 接收的标记报文格式化
+     */
+    public static void xmlSingFormatIn() throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	// int iLength = (Integer) EPOper.get(tpID,
+	// "__GDTA_FORMAT[0].__ITEMDATA_LENGTH[0]");
+
+	byte srcXml[] = (byte[]) EPOper.get(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]");
+	// SysPub.appLog("DEBUG", "srcXml.length=[%d]", srcXml.length);
+
+	int iLen = srcXml.length;
+	SysPub.appLog("DEBUG", "iLen[%d]", iLen);
+	byte[] msgXml = new byte[iLen + 1];
+	System.arraycopy(srcXml, 0, msgXml, 0, iLen);
+
+	msgXml[iLen] = '<';// <
+	SysPub.appLog("TRACE", "outXml.length=[%d]", msgXml.length);
+
+	// 获取报文数据和长度进行解析
+	EPOper.delete(tpID, "__GDTA_FORMAT[0].__ITEMDATA[0]");
+	EPOper.delete(tpID, "__GDTA_FORMAT[0].__ITEMDATA_LENGTH[0]");
+
+	EPOper.put(tpID, "__GDTA_FORMAT[0].__ITEMDATA[0]", msgXml);
+	// 长度+1 加了一个<字符
+	EPOper.put(tpID, "__GDTA_FORMAT[0].__ITEMDATA_LENGTH[0]", iLen + 1);
+	msgXml = null;
+
+	SysPub.appLog("TRACE", "xmlSingFormatIn 完成");
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月27日
+     * 
+     * @version 发送标记报文格式化
+     */
+    public static void xmlSingFormatOut() throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	byte srcXml[] = (byte[]) EPOper.get(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]");
+	// int iLength = (Integer) EPOper.get(tpID,
+	// "__GDTA_FORMAT[0].__GDTA_ITEMDATA_LENGTH[0]");
+	int iLen = srcXml.length;
+	// SysPub.appLog("TRACE", "iLen[%d]", iLen);
+	byte[] msgXml = new byte[iLen - 1];
+	System.arraycopy(srcXml, 0, msgXml, 0, iLen - 1);
+	SysPub.appLog("TRACE", "iLen[%d]msgXml.length[%d]", iLen, msgXml.length);
+
+	EPOper.delete(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]");
+	EPOper.delete(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA_LENGTH[0]");
+
+	EPOper.put(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]", msgXml);
+	// 前面补了一个< 长度保持不变
+	EPOper.put(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA_LENGTH[0]", iLen);
+	msgXml = null;
+	SysPub.appLog("TRACE", "xmlSingFormatOut 完成");
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年5月31日
+     * 
+     * @version 赋值响应码和响应信息
+     */
+    public static void setCupMsg(String ret, String msg, String szStat) throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	EPOper.put(tpID, "fmt_CUP_SVR_OUT[0].Rsp_Body[0].SysRtnInf[0].SysRtnCd", ret);
+	EPOper.put(tpID, "fmt_CUP_SVR_OUT[0].Rsp_Body[0].SysRtnInf[0].SysRtnDesc", msg);
+	EPOper.put(tpID, "T_NCP_BOOK[0].RET_CODE", ret);
+	EPOper.put(tpID, "T_NCP_BOOK[0].RET_MSG", msg);
+	EPOper.put(tpID, "T_NCP_BOOK[0].STAT", szStat);
+    }
+
+    public static void setErrMsg(String tpID, String ret, String msg) throws Exception {
+	EPOper.put(tpID, "INIT[0].__ERR_RET", ret);
+	EPOper.put(tpID, "INIT[0].__ERR_MSG", msg);
+    }
+
+    /*
+     * @author
+     * 
+     * @createAt
+     * 
+     * @version 赋值成功响应码和响应信息
+     */
+    public static void setCupSuc() throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	int iRet = SysPub.ChkStep(tpID);
+	if (0 != iRet) {
+	    SysPub.appLog("INFO", "交易处理失败,不进行成功后事件");
+	    return;
+	}
+	setCupMsg(SysPubDef.CUP_SUC_RET, SysPubDef.CUP_SUC_MSG, "1");
+	// EPOper.put(tpID, "T_NCP_BOOK[0].STAT", "1");
+	// EPOper.put(tpID, "T_NCP_BOOK[0].RET_CODE", SysPubDef.CUP_SUC_RET);
+	// EPOper.put(tpID, "T_NCP_BOOK[0].RET_MSG", SysPubDef.CUP_SUC_MSG);
+	return;
+    }
+
+    /*
+     * @author
+     * 
+     * @createAt
+     * 
+     * @version ALA前处理
+     */
+    public static void chkAla() throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	// 机器日期和机器时间赋值处理
+	EPOper.put(tpID, "INIT[0].TRAN_DATE", PubTool.getDate8());
+	EPOper.put(tpID, "INIT[0].TRAN_TIME", PubTool.getTime());
+	EPOper.put(tpID, "INIT[0].TRAN_DATETM", PubTool.getDate("yyyy-MM-dd'T'HH:mm:ss"));
+	EPOper.put(tpID, "INIT[0].TRAN_MS", PubTool.getDate("HH:mm:ss.SSS"));
+
+	String szChnlNo = (String) EPOper.get(tpID, "fmt_CUP_SVR_IN[0].MsgHeader[0].BkData[0].ChnlNo");
+
+	if ("QR".equals(szChnlNo)) {
+	}
+	return;
+    }
+
+    /**
+     * @author dingjunbo 预计流水 2017年7月4日
+     * @throws Exception
+     */
+    public static void instBook() throws Exception {
+	try {
+	    // 初始化数据对象INIT
+	    BookDaoTool.instBook();
+	    BookExtDaoTool.instBookExt();
+	} catch (Exception e) {
+	    throw e;
+	}
+    }
+
+    /**
+     * @author dingjunbo 更新流水
+     * @throws Exception
+     */
+    public static void uptBook() throws Exception {
+	try {
+	    BookDaoTool.uptBook();
+	} catch (Exception e) {
+	    throw e;
+	}
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年6月15日
+     * 
+     * @version 获取收付款方 返回字符串1-付款方，2-收款方
+     */
+    public static int chkRPFlg() throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    EPOper.put(tpID, "INIT[0]._RPFLG", EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].TrxInf[0].RPFlg"));
+	} catch (Exception e) {
+	    throw e;
+	}
+	return 0;
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年6月19日 根据协议号，
+     * 
+     * @返回值 检查是否签约 0-未签约，1-已签约.2-已解约,3-信息变更失效
+     */
+    public static int qrySignBySignNo(String _szSignNo) throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    try {
+		String szSqlStr = "SELECT * FROM t_ncp_sign "//
+			+ " WHERE sign_no = ?";
+		Object[] value = { _szSignNo };
+		DataBaseUtils.queryToElem(szSqlStr, "T_NCP_SIGN", value);
+		String SIGN_NO = (String) EPOper.get(tpID, "T_NCP_SIGN[0].SIGN_NO");
+		String STAT = (String) EPOper.get(tpID, "T_NCP_SIGN[0].STAT");
+		// 如果没有签约信息，返回成功
+		if (StringTool.isNullOrEmpty(SIGN_NO)) {
+		    SysPub.appLog("INFO", "无该协议号[%s]信息", _szSignNo);
+		    return 0;
+		} else if ("Y".equals(STAT.toUpperCase())) {
+		    SysPub.appLog("INFO", "协议号[%s]正常", _szSignNo);
+		    return 1;
+		} else if ("N".equals(STAT.toUpperCase())) {
+		    SysPub.appLog("INFO", "协议号[%s]已解约", _szSignNo);
+		    return 2;
+		} else if ("P".equals(STAT.toUpperCase())) {
+		    SysPub.appLog("INFO", "协议号[%s]由于信息变更失效", _szSignNo);
+		    return 3;
+		} else {
+		    return 0;
+		}
+	    } catch (Exception e) {
+		SysPub.appLog("ERROR", "qrySignInfo方法处理异常");
+		throw e;
+	    }
+	} catch (Exception e) {
+	    SysPub.appLog("ERROR", "qrySignInfo方法处理异常");
+	    throw e;
+	}
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年6月19日 根据协议号，
+     * 
+     * @说明 检查签约状态是否正常
+     * 
+     * @返回值 -1 检查失败 0-检查成功
+     */
+    public static int chkSign(String _szSignNo, String _szFlag) throws Exception {
+	try {
+	    if (StringTool.isNullOrEmpty(_szSignNo)) {
+		QrBusiPub.setCupMsg("PS500023", "签约协议号不能为空", "2");
+		SysPub.appLog("ERROR", "PS500023-签约协议号不能为空");
+		return -1;
+	    }
+
+	    // 0-未签约，1-已签约.2-已解约,3-信息变更失效
+	    int iRet = qrySignBySignNo(_szSignNo);
+	    if (1 != iRet) {
+		String szCode = SysPubDef.CUP_ERR_RET, szMsg = SysPubDef.CUP_ERR_MSG;
+		if (0 == iRet) {
+		    if ("ACCT".equals(_szFlag)) {
+			szCode = "PB521014";
+			szMsg = "接收方机构查无此签约协议号";
+		    } else {
+			szCode = "PB512001";
+			szMsg = "接收方机构查无此签约协议号";
+		    }
+		} else if (2 == iRet) {
+		    if ("ACCT".equals(_szFlag)) {
+			szCode = "PB521013";
+			szMsg = "签约协议号对应支付协议已解约";
+		    } else {
+			szCode = "PB512002";
+			szMsg = "协议状态为已解约";
+		    }
+		} else if (3 == iRet) {
+		    if ("ACCT".equals(_szFlag)) {
+			szCode = "PB521016";
+			szMsg = "签约协议号对应支付协议已失效（签约信息变更）";
+		    } else {
+			szCode = "PB512098";
+			szMsg = "签约协议号对应支付协议已失效（签约信息变更）";
+		    }
+		} else {
+		    // -1 数据库错误
+		}
+		// 组响应报文
+		QrBusiPub.setCupMsg(szCode, szMsg, "2");
+		SysPub.appLog("ERROR", "%s-%s", szCode, szMsg);
+		return -1;
+	    }
+	    return 0;
+	} catch (Exception e) {
+	    SysPub.appLog("ERROR", "qrySignInfo方法处理异常");
+	    throw e;
+	}
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年6月19日
+     * 
+     * @version 动态验证码校验 0-通过，否则不通过 szKey 关联码
+     */
+    public static int chkSMSVrfy(String _szKey, String _szVery) throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    if (_szKey.length() < 8) {
+		QrBusiPub.setCupMsg("PB005X12", "动态关联码信息错误", "2");
+		SysPub.appLog("ERROR", "PB005X12-动态关联码信息错误");
+		return -1;
+	    }
+	    String szSqlStr = "";
+
+	    String sql = "select * from t_sms_confirm where plat_date = ? and seq_no = ?";
+	    Object[] value = new Object[2];
+	    String date = _szKey.substring(0, 8);
+	    String seq = _szKey.substring(8);
+	    value[0] = date;
+	    value[1] = seq;
+	    int iRet = DataBaseUtils.queryToElem(sql, "T_SMS_CONFIRM", value);
+	    if (iRet == 0) {
+		QrBusiPub.setCupMsg("PB511027", "动态短信关联码错误", "2");
+		SysPub.appLog("ERROR", "PB511027-动态短信关联码错误");
+		return -1;
+	    }
+	    String szFlag = (String) EPOper.get(tpID, "T_SMS_CONFIRM[0].FLAG");
+	    if ("1".equals(szFlag)) {
+		QrBusiPub.setCupMsg("PB511028", "短信验证码已失效", "2");
+		SysPub.appLog("ERROR", "PB511028-短信验证码已失效");
+		return -1;
+	    }
+	    int iFailNum = (Integer) EPOper.get(tpID, "T_SMS_CONFIRM[0].FAIL_TIMES");
+	    if (iFailNum > 3) {
+		QrBusiPub.setCupMsg("PB005X09", "身份认证失败(动态码错误次数超限)", "2");
+		SysPub.appLog("ERROR", "PB005X09-身份认证失败(动态码错误次数超限)");
+		return -1;
+	    }
+
+	    int szLocVrfy = (Integer) EPOper.get(tpID, "T_SMS_CONFIRM[0].VRFY_NO");// 验证码
+	    // 验证码不一致
+	    if (!(String.valueOf(szLocVrfy).equals(_szVery))) {
+		szSqlStr = " UPDATE t_sms_confirm SET fail_times = fail_times + 1 "//
+			+ " WHERE plat_date = ? and seq_no = ? ";
+		QrBusiPub.setCupMsg("PB511027", "短信验证码不符", "2");
+		SysPub.appLog("ERROR", "PB511027-短信验证码不符");
+		DataBaseUtils.execute(szSqlStr, value);
+		return -1;
+	    }
+	    // String szLocTime = (String) EPOper.get(tpID,
+	    // "INIT[0].TRAN_DATETM");
+	    String szLocTime = SysPub.getDataBaseTime();
+	    szLocTime = szLocTime.substring(0, 10) + "T" + szLocTime.substring(11);
+	    String szInvlTime = (String) EPOper.get(tpID, "T_SMS_CONFIRM[0].INVL_DATE");// 失效时间
+	    SysPub.appLog("DEBUG", "szLocTime=[%s]-szInvlTime=[%s]", szLocTime, szInvlTime);
+	    if (PubTool.subDate(szLocTime, szInvlTime, "yyyy-MM-dd'T'HH:mm:ss") > 0) {
+		// 验证码已失效
+		szSqlStr = " UPDATE t_sms_confirm SET Flag = '1' "//
+			+ " WHERE plat_date = ? AND seq_no = ? ";
+		DataBaseUtils.execute(szSqlStr, value);
+		QrBusiPub.setCupMsg("PB511028", "短信验证码已超过有效时间", "2");
+		SysPub.appLog("ERROR", "PB511028-短信验证码已超过有效时间");
+		return -1;
+	    }
+	    SysPub.appLog("INFO", "短信校验通过");
+	    return 0;
+	} catch (Exception e) {
+	    e.printStackTrace();
+	    throw e;
+	}
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年6月19日
+     * 
+     * @version 更新短信校验码为失效
+     */
+    public static int uptSMSInvl(String tpID, String _szKey) throws Exception {
+	try {
+	    String szLocTime = (String) EPOper.get(tpID, "INIT[0].TRAN_DATETM");
+	    ;
+
+	    Object[] value = new Object[3];
+	    String date = _szKey.substring(0, 8);
+	    String seq = _szKey.substring(8);
+	    value[0] = szLocTime;
+	    value[1] = date;
+	    value[2] = seq;
+	    SysPub.appLog("INFO", "短信验证码平台日期[%s]短信验证码平台流水号[%s]", date, seq);
+
+	    // 验证码已失效
+	    String szSqlStr = " UPDATE t_sms_confirm "//
+		    + " SET Flag = '1' ,invl_date=? "//
+		    + " WHERE plat_date = ? AND seq_no = ? ";
+	    DataBaseUtils.execute(szSqlStr, value);
+	    return 0;
+	} catch (Exception e) {
+	    e.printStackTrace();
+	    throw e;
+	}
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年6月19日
+     * 
+     * @version 检查原交易信息和当前交易信息是否一致
+     * 
+     * @返回值 0-检查通过 1-没有找到原交易（自行判断是否要报错） -1-检查失败
+     */
+    public static int chkOriInfo(String _szKey) throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+
+	    // 比较原流水信息 证件类型 证件号码 手机号
+	    String szIDTp = (String) EPOper.get(tpID, "T_NCP_BOOK[0].PAY_CERT_TYPE");// 接收方证件类型
+	    String szIDNo = (String) EPOper.get(tpID, "T_NCP_BOOK[0].PAY_CERT_NO");// 接收方证件号
+	    String szMobNo = (String) EPOper.get(tpID, "T_NCP_BOOK[0].PAY_PHN");// 接收方预留手机号
+	    String szRcverAcctId = (String) EPOper.get(tpID, "T_NCP_BOOK[0].PAY_ACCT_NO");// -接收方账户
+	    String szRcverNm = (String) EPOper.get(tpID, "T_NCP_BOOK[0].PAY_ACCT_NAME");// 接收方名称
+	    Object[] value = new Object[2];
+	    String date = _szKey.substring(0, 8);
+	    String seq = _szKey.substring(8);
+	    value[0] = date;
+	    value[1] = seq;
+	    String szSqlStr = "select * from t_ncp_book where plat_date = ? and seq_no = ?";
+	    // 从流水表查询原交易信息
+	    int iRet = DataBaseUtils.queryToElem(szSqlStr, "T_NCP_BOOK_HIST", value);
+	    if (0 == iRet) {
+		SysPub.appLog("INFO", "没有找到原交易信息");
+		return 1;
+	    }
+	    String szCertType = (String) EPOper.get(tpID, "T_NCP_BOOK_HIST[0].PAY_CERT_TYPE");
+	    String szCertNo = (String) EPOper.get(tpID, "T_NCP_BOOK_HIST[0].PAY_CERT_NO");
+	    String szPayPhn = (String) EPOper.get(tpID, "T_NCP_BOOK_HIST[0].PAY_PHN");
+	    String szAcctNo = (String) EPOper.get(tpID, "T_NCP_BOOK_HIST[0].PAY_ACCT_NO");
+	    String szAcctName = (String) EPOper.get(tpID, "T_NCP_BOOK_HIST[0].PAY_ACCT_NAME");
+	    // 比较
+	    if (!StringTool.isNullOrEmpty(szIDTp)) {
+		if (!szIDTp.equals(szCertType)) {
+		    QrBusiPub.setCupMsg("PB005X02", "身份认证失败（证件类型不符）", "2");
+		    SysPub.appLog("ERROR", "PB005X02-身份认证失败（证件类型不符）");
+		    return -1;
+		}
+	    }
+	    if (!StringTool.isNullOrEmpty(szIDNo)) {
+		if (!szIDNo.equals(szCertNo)) {
+		    QrBusiPub.setCupMsg("PB005X03", "身份认证失败（证件号码不符）", "2");
+		    SysPub.appLog("ERROR", "PB005X03-身份认证失败（证件号码不符）");
+		    return -1;
+		}
+	    }
+	    if (!StringTool.isNullOrEmpty(szMobNo)) {
+		if (!szMobNo.equals(szPayPhn)) {
+		    QrBusiPub.setCupMsg("PB511013", "身份认证失败（手机号不符）", "2");
+		    SysPub.appLog("ERROR", "PB511013-身份认证失败（手机号不符）");
+		    return -1;
+		}
+	    }
+	    if (!StringTool.isNullOrEmpty(szRcverAcctId)) {
+		if (!szRcverAcctId.equals(szAcctNo)) {
+		    SysPub.appLog("ERROR", "错误码：%s,错误信息:%s", "PB511002", "接收方机构查无此账号");
+		    QrBusiPub.setCupMsg("PB511002", "接收方机构查无此账号", "2");
+		    return -1;
+		}
+	    }
+	    if (!StringTool.isNullOrEmpty(szRcverNm)) {
+		if (!szRcverNm.equals(szAcctName)) {
+		    SysPub.appLog("ERROR", "错误码：%s,错误信息:%s", "PB511017", "签约人账户名称与接收方机构记录不符");
+		    QrBusiPub.setCupMsg("PB511017", "签约人账户名称与接收方机构记录不符", "2");
+		    return -1;
+		}
+	    }
+	    SysPub.appLog("INFO", "原交易信息校验成功");
+	    return 0;
+	} catch (Exception e) {
+	    e.printStackTrace();
+	    throw e;
+	}
+    }
+
+    /**
+     * 交易成功，验证码验证成功后就失效
+     * 
+     * @param szKey
+     *            短信关联码
+     * @return
+     * @throws Exception
+     */
+    public static void upSmsConfirm(String szKey) throws Exception {
+	try {
+	    if (szKey.length() < 8) {
+		SysPub.appLog("ERROR", "错误信息:%s", "短信关联码错误");
+	    }
+	    Object[] value = new Object[2];
+	    String date = szKey.substring(0, 8);
+	    String seq = szKey.substring(8);
+	    value[0] = date;
+	    value[1] = seq;
+	    String UpSql = " update t_sms_confirm set flag = '1' where plat_date = ? and seq_no = ? ";
+	    Object[] value1 = new Object[2];
+	    value1[0] = date;
+	    value1[1] = seq;
+	    DataBaseUtils.execute(UpSql, value1);
+	} catch (Exception e) {
+	    e.printStackTrace();
+	    throw e;
+	}
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年6月21日
+     * 
+     * @version 1.0 插入短信发送表
+     */
+    public static int init_t_sms_confirm() throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    // 平台日期和平台流水号直接取流水表
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].PLAT_DATE", EPOper.get(tpID, "T_NCP_BOOK[0].PLAT_DATE"));
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].SEQ_NO", EPOper.get(tpID, "T_NCP_BOOK[0].SEQ_NO"));
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].SIGN_BRCH", EPOper.get(tpID, "fmt_CUP_SVR_IN[0].MsgHeader[0].IssrId"));
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].OTH_SEQ",
+		    EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].TrxInf[0].TrxId"));
+	    // 6位短信验证码
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].VRFY_NO", PubTool.getId6());
+	    // 关联码=平台日期+平台流水号
+	    String LINK_CODE = (String) EPOper.get(tpID, "T_NCP_BOOK[0].PLAT_DATE")
+		    + (Integer) EPOper.get(tpID, "T_NCP_BOOK[0].SEQ_NO");
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].LINK_CODE", LINK_CODE);
+	    EPOper.copy(tpID, tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].MobNo", "T_SMS_CONFIRM[0].PHN");
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].TX_DATE", PubTool.getDate());
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].FAIL_TIMES", 0);
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].FLAG", "0");
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].RMRK", "");
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].RMRK1", "");
+	    EPOper.put(tpID, "T_SMS_CONFIRM[0].RMRK2", "");
+	} catch (Exception e) {
+	    throw e;
+	}
+	return 0;
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年6月21日 sign_chnl-渠道,NCP：无卡支付,COT：柜面
+     * 
+     * @version 1.0 短信验证管理登记簿
+     */
+    public static int init_t_sms_info(String sign_chnl) throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    // sms_seq数据库为自增型，不需要赋值
+	    EPOper.put(tpID, "T_SMS_INFO[0].CHNL_NO", sign_chnl);
+	    String szRcverAcctId = (String) EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].RcverAcctId");
+	    EPOper.put(tpID, "T_SMS_INFO[0].ACCT_NO", szRcverAcctId);
+	    EPOper.put(tpID, "T_SMS_INFO[0].BRCH_NO",
+		    EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].RcverAcctIssrId"));
+	    String date = (String) EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].TrxInf[0].TrxDtTm");
+	    EPOper.put(tpID, "T_SMS_INFO[0].TRAN_DATE", date.substring(0, 10));
+	    EPOper.put(tpID, "T_SMS_INFO[0].TRAN_TIME", date.substring(11));
+	    String szMobNo = (String) EPOper.get(tpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].MobNo");
+	    EPOper.put(tpID, "T_SMS_INFO[0].PHN", szMobNo);
+	    StringBuffer sbMsg = new StringBuffer();
+	    Integer szVrfy = (Integer) EPOper.get(tpID, "T_SMS_CONFIRM[0].VRFY_NO");
+	    int ilen = szRcverAcctId.length();
+	    String tmp = szRcverAcctId.substring(ilen - 5, ilen);
+	    sbMsg.append("您尾号").append(tmp).append("的银行卡正在开通快捷支付功能，验证码").append(szVrfy).append("，切勿泄露该验证码！");
+	    EPOper.put(tpID, "T_SMS_INFO[0].SMS_MSG", sbMsg.toString());
+	    EPOper.put(tpID, "T_SMS_INFO[0].SND_STAT", "0");
+	    EPOper.put(tpID, "T_SMS_INFO[0].CRT_DATE", PubTool.getDate8());
+	    EPOper.put(tpID, "T_SMS_INFO[0].CRT_TIME", PubTool.getTime());
+	    EPOper.put(tpID, "T_SMS_INFO[0].SND_DATE", "");
+	    EPOper.put(tpID, "T_SMS_INFO[0].SND_TIMES", "0");
+	    EPOper.put(tpID, "T_SMS_INFO[0].RMRK", "");
+	    EPOper.put(tpID, "T_SMS_INFO[0].RMRK1", "");
+	} catch (Exception e) {
+	    throw e;
+	}
+	return 0;
+    }
+
+    /**
+     * 清理表数据
+     * 
+     * @throws Exception
+     */
+    public static int clrTabData(String _szTab, String _szWhere) throws Exception {
+	int iRet = 0;
+	String szSqlStr = "";
+	szSqlStr = "delete from " + _szTab + _szWhere;
+	int iLen = _szTab.length();
+	if (0 == iLen) {
+	    SysPub.appLog("INFO", "表名为空");
+	    return -1;
+	}
+	try {
+	    SysPub.appLog("INFO", "清理表[%s]", _szTab);
+	    iRet = DataBaseUtils.execute(szSqlStr, null);
+	    if (0 > iRet) {
+		SysPub.appLog("INFO", "清理表数据失败[%d]", iRet);
+		return -1;
+	    }
+	    SysPub.appLog("INFO", "清理表[%s]结束[%d]", _szTab, iRet);
+	} catch (Exception e) {
+	    SysPub.appLog("ERROR", "清理表数据失败");
+	    e.printStackTrace();
+	    throw e;
+	}
+	return 0;
+    }
+
+    /**
+     * 核心应答码转换为银联应答码和应答信息
+     * 
+     * @throws Exception
+     * @返回值 0-核心成功 -1-失败
+     */
+    public static int chanMsg(String szSvcNo) throws Exception {
+	try {
+	    int iRet = chanMsg(szSvcNo, "fmt_CUP_SVR_OUT");
+	    return iRet;
+	} catch (Exception e) {
+	    SysPub.appLog("ERROR", "核心响应码转换为 银联响应码失败");
+	    e.printStackTrace();
+	    throw e;
+	}
+    }
+
+    /**
+     * 核心应答码转换为银联应答码和应答信息
+     * 
+     * @throws Exception
+     * @返回值 0-核心成功 -1-失败
+     */
+    public static int chanMsg(String _szSvcNo, String _szObj) throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    String szFmt1 = _szObj + "[0].HOST_CLI_" + _szSvcNo + "_Rsp[0].RspCode";
+	    String szFmt2 = _szObj + "[0].HOST_CLI_" + _szSvcNo + "_Rsp[0].RspMsg";
+	    String szFmt3 = "fmt_CUP_SVR_IN[0].HOST_CLI_" + _szSvcNo + "_Req[0].TranCode";
+	    String szErrRet = (String) EPOper.get(tpID, szFmt1);
+	    String szErrMsg = (String) EPOper.get(tpID, szFmt2);
+	    EPOper.put(tpID, "T_NCP_BOOK[0].HOST_MSG", szErrMsg);// 登记核心错误信息
+	    String txcode = (String) EPOper.get(tpID, szFmt3); // 区分签约和记账返回银联响应码
+	    String szRetCd = "";
+	    String szRetMsg = "";
+	    if ("CMS113".equals(szErrRet) || "999996".equals(szErrRet) || "000050".equals(szErrRet)
+		    || "000054".equals(szErrRet) || "000693".equals(szErrRet) || "002539".equals(szErrRet)
+		    || "002554".equals(szErrRet) || "009129".equals(szErrRet) || "009135".equals(szErrRet)
+		    || "009151".equals(szErrRet) || "009192".equals(szErrRet) || "009267".equals(szErrRet)
+		    || "009453".equals(szErrRet) || "009511".equals(szErrRet) || "200104".equals(szErrRet)) {
+		szRetCd = "PB511002";
+		szRetMsg = "接收方机构查无此账号";
+	    } else if ("DPS307".equals(szErrRet) || "STAT01".equals(szErrRet) || "DPS539".equals(szErrRet)
+		    || "CMS158".equals(szErrRet)) {
+		if ("805070".equals(txcode)) {
+		    szRetCd = "PB511006";
+		    szRetMsg = "签约账户状态为已冻结";
+		} else {
+		    szRetCd = "PB520006";
+		    szRetMsg = "接收方账户状态为已冻结";
+		}
+	    } else if ("CMS173".equals(szErrRet) || "003851".equals(szErrRet) || "003852".equals(szErrRet)
+		    || "009140".equals(szErrRet) || "009141".equals(szErrRet) || "009297".equals(szErrRet)) {
+		szRetCd = "PB511008";
+		szRetMsg = "签约人账户状态为已锁定";
+	    } else if ("CMS167".equals(szErrRet) || "CMS154".equals(szErrRet) || "CMS152".equals(szErrRet)
+		    || "CMS153".equals(szErrRet) || "CMS187".equals(szErrRet) || "CMS147".equals(szErrRet)
+		    || "CMS148".equals(szErrRet)) {
+		szRetCd = "PB511010";
+		szRetMsg = "签约人账户状态为挂失";
+	    } else if ("DPS440".equals(szErrRet) || "LNS013".equals(szErrRet) || "BDS342".equals(szErrRet)
+		    || "DPS308".equals(szErrRet) || "DPS434".equals(szErrRet) || "LNS015".equals(szErrRet)
+		    || "GLS111".equals(szErrRet) || "DPS888".equals(szErrRet)) {
+		szRetCd = "PB520011";
+		szRetMsg = "接收方账户可用余额不足";
+	    } else if ("CMS119".equals(szErrRet)) {
+		szRetCd = "PB521021";
+		szRetMsg = "接收方账户当日交易次数超过接收方机构限制";
+	    } else if ("CMS115".equals(szErrRet) || "CMS118".equals(szErrRet) || "CMS122".equals(szErrRet)
+		    || "M41105".equals(szErrRet)) {
+		szRetCd = "PB521023";
+		szRetMsg = "接收方账户单笔交易金额超过接收方机构限制";
+	    } else if ("CMS117".equals(szErrRet)) {
+		szRetCd = "PB521024";
+		szRetMsg = "接收方账户当日累计交易金额超过接收方机构限制";
+	    } else if ("009903".equals(szErrRet)) {
+		szRetCd = "PB521012";
+		szRetMsg = "接收方账户为信用卡账户时可用额度不足";
+	    } else if ("C05T03".equals(szErrRet)) {
+		szRetCd = "PB511013";
+		szRetMsg = "签约人手机号不符";
+	    } else if ("C05T02".equals(szErrRet)) {
+		if ("805070".equals(txcode)) {
+		    szRetCd = "PB511017";
+		    szRetMsg = "签约人户名不符";
+		} else {
+		    szRetCd = "PB005203";
+		    szRetMsg = "收款户名不符";
+		}
+	    } else if ("C05T01".equals(szErrRet)) {
+		if ("805070".equals(txcode)) {
+		    szRetCd = "PB511019";
+		    szRetMsg = "签约人证件不符";
+		} else {
+		    szRetCd = "PB005203";
+		    szRetMsg = "收款证件不符";
+		}
+	    } else if ("CMS140".equals(szErrRet) || "CMS139".equals(szErrRet)) {
+		if ("805070".equals(txcode)) {
+		    szRetCd = "PB511005";
+		    szRetMsg = "签约账户已注销";
+		} else {
+		    szRetCd = "PB520005";
+		    szRetMsg = "接收方账户状态为已注销";
+		}
+	    } else if ("C05T04".equals(szErrRet)) {
+		szRetCd = "PB511014";
+		szRetMsg = "未预留手机号码";
+	    } else if ("C05T05".equals(szErrRet)) {
+		szRetCd = "PB511014";
+		szRetMsg = "未建立电子支付客户信息";
+	    } else if ("000000".equals(szErrRet)) {
+		// szRetCd = SysPubDef.CUP_SUC_RET;
+		// szRetMsg = SysPubDef.CUP_SUC_MSG;
+		// 注意：成功不转响应吗 由应用成功后处理调度setCupSuc完成响应码赋值
+		SysPub.appLog("INFO", "核心处理成功");
+		return 0;
+	    } else if (szErrRet == null || 0 == szErrRet.length()) {
+		// szRetCd = SysPubDef.CUP_TIME_RET;
+		// szRetMsg = SysPubDef.CUP_TIME_MSG;
+		szRetCd = "";
+		szRetMsg = "核心服务超时";
+	    } else {
+		szRetCd = SysPubDef.CUP_ERR_RET;
+		if (StringTool.isNullOrEmpty(szErrMsg)) {
+		    szRetMsg = "调度" + _szSvcNo + "服务失败";
+		} else {
+		    szRetMsg = szErrMsg; // 返回核心错误信息
+		}
+	    }
+	    // 超时流水状态为3
+	    // SysPub.appLog("DEBUG", "szErrRet-----:%s",szRetCd);
+	    if (StringTool.isNullOrEmpty(szRetCd)) {
+		setCupMsg(szRetCd, szRetMsg, "3");
+	    } else {
+		setCupMsg(szRetCd, szRetMsg, "2");
+	    }
+	    SysPub.appLog("ERROR", "核心返回码:%s返回信息%s", szErrRet, szErrMsg);
+	    SysPub.appLog("ERROR", "银联返回码:%s返回信息%s", szRetCd, szRetMsg);
+	    return -1;
+	} catch (Exception e) {
+	    SysPub.appLog("ERROR", "核心响应码转换为 银联响应码失败");
+	    e.printStackTrace();
+	    throw e;
+	}
+    }
+
+    /**
+     * 核心证件类型转换为银联证件类型
+     * 
+     * @throws Exception
+     */
+    public static String chanIdType(String szIdType) throws Exception {
+	try {
+	    if (szIdType == null)
+		return "99";
+	    else if ("01".equals(szIdType))// 身份证
+		return "01";
+	    else if ("02".equals(szIdType))// 军官证
+		return "02";
+	    else if ("03".equals(szIdType))// 户口簿
+		return "08";
+	    else if ("04".equals(szIdType))// 护照
+		return "03";
+	    else if ("05".equals(szIdType))// 其他
+		return "99";
+	    else if ("06".equals(szIdType))// 其他
+		return "99";
+	    else if ("07".equals(szIdType))// 其他
+		return "09";
+	    else if ("49".equals(szIdType))// 其他
+		return "99";
+	    else
+		return "99";
+	} catch (Exception e) {
+	    SysPub.appLog("ERROR", "核心证件类型转换为银联证件类型失败");
+	    e.printStackTrace();
+	    throw e;
+	}
+    }
+
+    /*
+     * 银联不支持交易处理
+     */
+    public static int cupNoSup() throws Exception {
+	// DtaInfo dtaInfo = DtaInfo.getInstance();
+	// String tpID = dtaInfo.getTpId();
+
+	QrBusiPub.setCupMsg("PB040000", "请求的功能尚不支持", "9");
+	// EPOper.put(tpID, "T_NCP_BOOK[0].STAT", "9");
+	// EPOper.put(tpID, "T_NCP_BOOK[0].RET_CODE", "PB040000");
+	// EPOper.put(tpID, "T_NCP_BOOK[0].RET_MSG", "请求的功能尚不支持");
+	return 0;
+    }
+
+    /**
+     * 根据银联交易信息查询
+     * 
+     * @throws Exception
+     *             _szSnd 发起方代码 _szCupSeq 银联流水号 _szFlag 0-不查询EXT信息 1-查询EXT信息
+     */
+    public static int qryCupBook(String _szSnd, String _szCupSeq, String _szFlag) throws Exception {
+	int iRet = 0;
+	String szSqlStr = "";
+	szSqlStr = " SELECT * FROM T_NCP_BOOK " //
+		+ " WHERE snd_brch_no = ? and oth_seq = ? ";
+	Object[] value = { _szSnd, _szCupSeq };
+	try {
+	    iRet = DataBaseUtils.queryToElem(szSqlStr, "T_NCP_BOOK_HIST", value);
+	    if (0 > iRet) {
+		SysPub.appLog("INFO", "查询T_NCP_BOOK失败[%d]");
+		return -1;
+	    } else if (0 == iRet) {
+		// 查询不到 查找历史表
+		szSqlStr = " SELECT * FROM T_NCP_BOOK_HIST " //
+			+ " WHERE snd_brch_no = ? and oth_seq = ? ";
+		Object[] hisvalue = { _szSnd, _szCupSeq };
+		iRet = DataBaseUtils.queryToElem(szSqlStr, "T_NCP_BOOK_HIST", hisvalue);
+		if (0 > iRet) {
+		    SysPub.appLog("INFO", "查询T_NCP_BOOK失败[%d]");
+		    return -1;
+		} else if (0 == iRet) {
+		    SysPub.appLog("ERROR", "T_NCP_BOOK无记录");
+		    return 0;
+		}
+	    }
+
+	    // 判断是否查询辅助信息表
+	    if (!"1".equals(_szFlag)) {
+		SysPub.appLog("DEBUG", "不查询T_NCP_BOOK_EXT");
+		return iRet;
+	    }
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    String szPlatDate = (String) EPOper.get(tpID, "T_NCP_BOOK[0].PLAT_DATE");
+	    int iSeqNo = (Integer) EPOper.get(tpID, "T_NCP_BOOK[0].SEQ_NO");
+	    szSqlStr = " SELECT * FROM T_NCP_BOOK_EXT " //
+		    + " WHERE plat_date = ? and seq_no = ? ";
+	    Object[] value1 = { szPlatDate, iSeqNo };
+	    iRet = DataBaseUtils.queryToElem(szSqlStr, "T_NCP_BOOK_EXT_HIST", value1);
+	    if (0 >= iRet) {
+		SysPub.appLog("INFO", "查询T_NCP_BOOK失败[%d]");
+		return -1;
+	    }
+
+	} catch (Exception e) {
+	    SysPub.appLog("ERROR", "清理表数据失败");
+	    e.printStackTrace();
+	    throw e;
+	}
+	return iRet;
+    }
+
+    /**
+     * 插入冲正信息(szFormName 只能是T_NCP_BOOK[N]或T_NCP_BOOK_HIST[N])
+     * 
+     * @param szfmtIn
+     *            对象名称
+     * @throws Exception
+     * @格式说明 _szFormName：登记簿的FROM名 _szReason：冲正原因
+     */
+    public static int insHostRevData(String _szFormName, String _szReason) throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    String szPlatDate = (String) EPOper.get(tpID, _szFormName + ".PLAT_DATE");
+	    int iSeqNo = (Integer) EPOper.get(tpID, _szFormName + ".SEQ_NO");
+
+	    Object[] value = new Object[15];
+
+	    value[0] = szPlatDate;
+	    value[1] = iSeqNo;
+	    value[2] = "HOST_CLI";// 冲正DTA
+	    value[3] = "S818888";// 冲正服务码
+	    value[4] = "HOST_REV";// 交易类型-冲正
+	    value[5] = "0"; // 发送状态 0-初始化
+	    StringBuffer sb = new StringBuffer();
+	    // 原前置交易日期
+	    if (!StringTool.isNullOrEmpty(szPlatDate)) {
+		sb.append(szPlatDate).append("|");
+	    } else {
+		sb.append("|");
+	    }
+	    // 原前置流水号
+	    sb.append(iSeqNo).append("|");
+	    // 原渠道代码
+	    String szChannelId = (String) EPOper.get(tpID, _szFormName + ".CHNL_NO");
+	    if (!StringTool.isNullOrEmpty(szChannelId)) {
+		sb.append(szChannelId).append("|");
+	    } else {
+		sb.append("|");
+	    }
+	    // 原前置机编号
+	    sb.append("UNCPS001").append("|");
+	    /*
+	     * String szFrntNo = (String) EPOper.get(tpID,
+	     * "T_PLAT_PARA[0].PLAT_NO"); if
+	     * (!StringTool.isNullOrEmpty(szFrntNo)) {
+	     * sb.append(szFrntNo).append("|"); } else { sb.append("|"); }
+	     */
+	    // 预授权标志
+	    sb.append("").append("|");
+	    // 冲正标志
+	    sb.append("2").append("|");
+	    value[6] = sb.toString();
+	    value[7] = PubTool.getDate("yyyy-MM-dd'T'HH:mm:ss");
+	    value[8] = 0;
+	    value[9] = "";
+	    value[10] = "";
+	    value[11] = _szReason;
+	    value[12] = "";
+	    value[13] = "";
+	    value[14] = "";
+	    String sql = "insert into t_ncp_wait_snd values( ?,?,?,?,?,?,?,?,?,?,?,?,?,?,? )";
+
+	    int iRet = DataBaseUtils.execute(sql, value);
+	    if (1 != iRet) {
+		SysPub.appLog("ERROR", "登记冲正信息失败 ");
+		return -1;
+	    }
+
+	} catch (Exception e) {
+	    SysPub.appLog("ERROR", e.getMessage());
+	    throw e;
+	}
+	return 0;
+    }
+
+    /*
+     * @author xiangjun
+     * 
+     * @createAt 2017年6月23日
+     * 
+     * @version 1.0 判断银联上送的账户信息与核心账户信息是否一致
+     */
+    public static int ChkAcctInfo() throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String szTpID = dtaInfo.getTpId();
+
+	    // 若上一步骤返回失败，本步骤也返回失败
+	    int iRet = SysPub.ChkStep(szTpID);
+	    if (-1 == iRet) {
+		return -1;
+	    }
+
+	    // 获取银联上送的户名、证件类型、证件号码、手机号
+	    String szAcctNameIn = (String) EPOper.get(szTpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].RcverNm");
+	    String szCertTypeIn = (String) EPOper.get(szTpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].IDTp");
+	    String szCertNoIn = (String) EPOper.get(szTpID, "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].IDNo");
+	    // String szPhoneIn = (String)EPOper.get(szTpID,
+	    // "fmt_CUP_SVR_IN[0].Req_Body[0].RcverInf[0].MobNo");
+	    String szAcctName = "";
+	    String szCertType = "";
+	    String szCertNo = "";
+
+	    String szCardType = (String) EPOper.get(szTpID, "INIT[0]._CARD_TYPE");
+	    if ("0".equals(szCardType))// 借记卡
+	    {
+		// 取借记卡账户户名、证件类型、证件号码、手机号
+		szAcctName = (String) EPOper.get(szTpID, "fmt_CUP_SVR_OUT[0].HOST_CLI_S805070_Rsp[0].FeePayAcctName4");
+		szCertType = (String) EPOper.get(szTpID, "fmt_CUP_SVR_OUT[0].HOST_CLI_S805070_Rsp[0].IdType");
+		szCertNo = (String) EPOper.get(szTpID, "fmt_CUP_SVR_OUT[0].HOST_CLI_S805070_Rsp[0].IdNo");
+	    } else {
+		// 取贷记卡账户户名、证件类型、证件号码、手机号
+		szAcctName = (String) EPOper.get(szTpID, "fmt_CUP_SVR_OUT[0].CREDIT_CLI_030517_Rsp.NAME");
+		szCertType = (String) EPOper.get(szTpID, "fmt_CUP_SVR_OUT[0].CREDIT_CLI_030517_Rsp.KEYTYPE");
+		szCertNo = (String) EPOper.get(szTpID, "fmt_CUP_SVR_OUT[0].CREDIT_CLI_030517_Rsp.CUSTID");
+	    }
+
+	    // 判断账户户名、证件类型、证件号码、手机号与银联上送的是否一致
+	    // dingjun junbo mod 20170830账户信息验证由核心验证
+	    /*
+	     * if (!szAcctName.equals(szAcctNameIn)) { EPOper.put(szTpID,
+	     * "INIT[0]._FUNC_RETURN", "1"); // 组响应报文 SysPub.appLog("INFO",
+	     * "szAcctName=[%s]szAcctNameIn=[%s]", szAcctName, szAcctNameIn);
+	     * setCupMsg("PB511017", "签约人账户名称与接收方机构记录不符", "2");
+	     * SysPub.appLog("ERROR", "错误码：%s,错误信息:%s", "PB511017",
+	     * "签约人账户名称与接收方机构记录不符"); return -1; }
+	     * 
+	     * if (!szCertType.equals(szCertTypeIn) ||
+	     * !szCertNo.equals(szCertNoIn)) { SysPub.appLog("INFO",
+	     * "szCertType=[%s]szCertTypeIn=[%s]", szCertType, szCertTypeIn);
+	     * SysPub.appLog("INFO", "szCertNo=[%s]szCertNoIn=[%s]", szCertNo,
+	     * szCertNoIn); EPOper.put(szTpID, "INIT[0]._FUNC_RETURN", "1"); //
+	     * 组响应报文 setCupMsg("PB511019", "签约人证件号与接收方机构记录不符", "2");
+	     * SysPub.appLog("ERROR", "错误码：%s,错误信息:%s", "PB511019",
+	     * "签约人证件号与接收方机构记录不符"); return -1; }
+	     */
+	    SysPub.appLog("INFO", "银联账户信息与核心账户信息一致");
+	    return 0;
+	} catch (Exception e) {
+	    throw e;
+	}
+	// return 0;
+    }
+
+    /*
+     * @author chenshx
+     * 
+     * @createAt 2017年8月27日
+     * 
+     * @para _szSvcName 服务码 _szFlag NOREV-不冲正 REV-冲正 _szObj对象前缀（程序中补充_IN或_OUT）
+     * 
+     * @version 1.0 调度主机服务
+     */
+    public static int callHostSvc(String _szSvcName, String _szFlag, String _szPreObj) throws Exception {
+	try {
+	    // 0-借记卡 1-贷记卡
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    // 若上一步骤返回失败，本步骤也返回失败
+	    int iRet = SysPub.ChkStep(tpID);
+	    if (-1 == iRet) {
+		return -1;
+	    }
+	    String szObjIn = _szPreObj + "_IN";
+	    String szObjOut = _szPreObj + "_OUT";
+
+	    BusiMsgProc.headHost(szObjIn, _szSvcName);
+	    String szFmtName = szObjOut + "[0].HOST_CLI_" + _szSvcName + "_Rsp[0].";
+	    SysPub.appLog("INFO", "调用[%s]服务开始", _szSvcName);
+	    try {
+		DtaTool.call("HOST_CLI", _szSvcName);
+	    } catch (Exception e) {
+		SysPub.appLog("ERROR", "调用核心服务失败");
+	    }
+	    String szRetCd = (String) EPOper.get(tpID, szFmtName + "RspCode"); // 响应代码
+	    SysPub.appLog("INFO", "[%s]响应码[%s]", _szSvcName, szRetCd);
+	    if (StringTool.isNullOrEmpty(szRetCd)) {
+		SysPub.appLog("ERROR", "核心超时");
+		setCupMsg(SysPubDef.CUP_TIME_RET, SysPubDef.CUP_TIME_MSG, "3");// 更新为超时
+		if ("REV".equals(_szFlag)) {
+		    insHostRevData("T_NCP_BOOK", "核心交易超时冲正");
+		}
+		return -1;
+	    }
+	    // 主机信息复制到登记簿中
+	    if ("S801003".equals(_szSvcName)) {
+		EPOper.copy(tpID, tpID, szFmtName + "Brc2", "T_NCP_BOOK[0].OPEN_BRCH");
+	    } else {
+		EPOper.copy(tpID, tpID, szFmtName + "OpenBrc", "T_NCP_BOOK[0].OPEN_BRCH");
+	    }
+	    EPOper.copy(tpID, tpID, szFmtName + "SerSeqNo", "T_NCP_BOOK[0].HOST_SEQ");
+	    EPOper.copy(tpID, tpID, szFmtName + "TranDate", "T_NCP_BOOK[0].HOST_DATE");
+	    iRet = chanMsg(_szSvcName, szObjOut);
+	    return iRet;
+	} catch (Exception e) {
+	    throw e;
+	}
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年8月31日
+     * 
+     * @para _szSvcName 服务码 _szObj对象前缀（程序中补充_IN或_OUT）
+     * 
+     * @version 1.0 调度短信服务
+     */
+    public static int callSmsSvc(String _szSvcName, String _szPreObj) throws Exception {
+	try {
+	    // 0-借记卡 1-贷记卡
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    // 若上一步骤返回失败，本步骤也返回失败
+	    int iRet = SysPub.ChkStep(tpID);
+	    if (-1 == iRet) {
+		return -1;
+	    }
+	    String szObjIn = _szPreObj + "_IN";
+	    String szObjOut = _szPreObj + "_OUT";
+	    // 短信平台报文头赋值
+	    BusiMsgProc.headSms(_szSvcName);
+	    String szFmtName = szObjOut + "[0].HOST_CLI_" + _szSvcName + "_Rsp[0].";
+	    SysPub.appLog("INFO", "调用[%s]服务开始", _szSvcName);
+	    DtaTool.call("SMS_CLI", _szSvcName);
+	    String szRetCd = (String) EPOper.get(tpID, szFmtName + "RspCode"); // 响应代码
+	    SysPub.appLog("INFO", "[%s]响应码[%s]", _szSvcName, szRetCd);
+	    if (StringTool.isNullOrEmpty(szRetCd)) {
+		SysPub.appLog("ERROR", "调度短信服务超时");
+	    }
+	    // 主机信息复制到登记簿中
+	    // EPOper.copy(tpID, tpID, szFmtName + "SerSeqNo",
+	    // "T_NCP_BOOK[0].HOST_SEQ");
+	    // EPOper.copy(tpID, tpID, szFmtName + "TranDate",
+	    // "T_NCP_BOOK[0].HOST_DATE");
+	    // iRet = chanMsg(_szSvcName, szObjOut);
+	    /*
+	     * 增加短信服务处理
+	     */
+	    return iRet;
+	} catch (Exception e) {
+	    throw e;
+	}
+    }
+
+    /*
+     * @author dingjunbo
+     * 
+     * @createAt 2017年8月31日
+     * 
+     * @version 1.0 账务交易超时，不给银联返回报文
+     */
+    public static void chkTimeOut() throws Exception {
+	try {
+	    DtaInfo dtaInfo = DtaInfo.getInstance();
+	    String tpID = dtaInfo.getTpId();
+	    String szRet = (String) EPOper.get(tpID, "fmt_CUP_SVR_OUT[0].Rsp_Body[0].SysRtnInf[0].SysRtnCd");
+	    if (StringTool.isNullOrEmpty(szRet))
+		EPOper.delete(tpID, "fmt_CUP_SVR_OUT");
+	} catch (Exception e) {
+	    throw e;
+	}
+    }
+
+    /*
+     * @author chenshx
+     * 
+     * @createAt 2017年9月6日
+     * 
+     * @version 1.0 查找渠道方机构标识中指定的机构号
+     * 
+     * @para
+     */
+    public static String findChnlBrch(String _szChnlBrch, String _szTag) throws Exception {
+	try {
+	    String szChnlBrch = _szChnlBrch + ",";
+	    String[] szTmp = szChnlBrch.split(",");
+	    SysPub.appLog("TRACE", "%d", szTmp.length);
+	    for (String szBrch : szTmp) {
+		SysPub.appLog("DEBUG", "%s", szBrch);
+		if (_szTag.equals(szBrch.subSequence(0, 2))) {
+		    SysPub.appLog("DEBUG", "%s", szBrch.substring(2));
+		    return szBrch.substring(2);
+		}
+	    }
+	    return "";
+	} catch (Exception e) {
+	    throw e;
+	}
+    }
+
+    /*
+     * @version 管理端赋值响应码和响应信息
+     */
+    public static void setMngMsg(String tpID, String ret, String msg) throws Exception {
+	EPOper.put(tpID, "MngChkOut[0].MsgHead[0].RspCode", ret);
+	EPOper.put(tpID, "MngChkOut[0].MsgHead[0].RspMsg", msg);
+    }
+
+    /*
+     * @version 对账分类编号
+     * 
+     * @Para _szSvcNa 交易码
+     * 
+     * @Para _szEntrNo 业务编号
+     * 
+     * @Para _szClearDate 清算日期
+     */
+    public static String crtChkActNo(String _szSvcNa, String _szEntrNo, String _szClearDate) throws Exception {
+	String szChkActNo = "";
+	String szDate = "";
+	szDate = _szClearDate.substring(0, 4) + _szClearDate.substring(5, 7) + _szClearDate.substring(8, 10);
+	if ("SACCT0021001".equals(_szSvcNa) || "SACCT0021002".equals(_szSvcNa) || "SACCT0021003".equals(_szSvcNa)
+		|| "SACCT0022001".equals(_szSvcNa) || "SACCT0021101".equals(_szSvcNa)) {
+	    szChkActNo = _szEntrNo + szDate + "01";
+	} else if ("SQRY00020001".equals(_szSvcNa) || "SQRY00020003".equals(_szSvcNa) || "SQRY00020101".equals(_szSvcNa)
+		|| "SSIGN0020202  ".equals(_szSvcNa)) {
+	    szChkActNo = _szEntrNo + szDate + "03";
+	}
+	SysPub.appLog("TRACE", "%s", szChkActNo);
+
+	return szChkActNo;
+    }
+
+    /**
+     * @param args
+     * @throws Exception
+     */
+    public static void main(String[] args) throws Exception {
+	// TODO Auto-generated method stub
+	System.out.println("开始");
+	String brch = findChnlBrch("01FQJGDM01,02FQJGDM02,03FQJGDM03,04FQJGDM04,05FQJGDM05", "01");
+	System.out.println("结束" + brch);
+	return;
+    }
+
+    /**
+     * 返回的标记报文格式化
+     * 
+     * @throws UnsupportedEncodingException
+     * @throws Exception
+     */
+    public static void signFMTFormatOut() throws UnsupportedEncodingException {
+
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	byte srcXml[] = (byte[]) EPOper.get(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]");
+	// byte srcXml[] = (byte[])
+	// EPOper.get(tpID,"__GDTA_FORMAT[0].__ITEMDATA[0]");
+	String xmlStr = new String(srcXml, "GBK");
+	String sTmp = ("<" + xmlStr).substring(0, xmlStr.length());
+	byte[] xTmp = sTmp.getBytes("GBK");
+	// 组报文从对象
+	// 获取报文数据和长度
+	EPOper.delete(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]");
+	EPOper.delete(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA_LENGTH[0]");
+
+	EPOper.put(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]", xTmp);
+	EPOper.put(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA_LENGTH[0]", xTmp.length);
+
+    }
+
+    /**
+     * 接收的标记报文格式化
+     * 
+     * @throws UnsupportedEncodingException
+     * @throws Exception
+     */
+    public static void signFMTFormatIn() throws UnsupportedEncodingException {
+
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	// byte srcXml[] = (byte[])
+	// EPOper.get(tpID,"__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]");
+	byte srcXml[] = (byte[]) EPOper.get(tpID, "__GDTA_FORMAT[0].__ITEMDATA[0]");
+	String xmlStr = new String(srcXml, "GBK");
+	String sTmp = xmlStr.substring(1, xmlStr.length()) + "<";
+	byte[] xTmp = sTmp.getBytes("GBK");
+	// 报文解析从对象
+	// 获取报文数据和长度进行解析
+	// EPOper.delete(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]");
+	EPOper.delete(tpID, "__GDTA_FORMAT[0].__ITEMDATA[0]");
+	// EPOper.delete(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA_LENGTH[0]");
+	EPOper.delete(tpID, "__GDTA_FORMAT[0].__ITEMDATA_LENGTH[0]");
+
+	// EPOper.put(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA[0]", xTmp);
+	EPOper.put(tpID, "__GDTA_FORMAT[0].__ITEMDATA[0]", xTmp);
+	// EPOper.put(tpID, "__GDTA_FORMAT[0].__GDTA_ITEMDATA_LENGTH[0]",
+	// xTmp.length);
+	EPOper.put(tpID, "__GDTA_FORMAT[0].__ITEMDATA_LENGTH[0]", xTmp.length);
+     
+    }
+    
+    /**
+     * 获取国密用户标识
+     */
+    public static String getURL() {
+    	DtaInfo dtaInfo = DtaInfo.getInstance();
+    	String tpID = dtaInfo.getTpId();
+    	String svcName = dtaInfo.getSvcName();
+    	String szURL = "";
+    	
+    	if("AT0190".equals(svcName))
+    		szURL = "/qrc/api/issBackTransReq.do";
+    	else if( "BS0210".equals(svcName))
+    		szURL = "/qrc/api/issBackTransReq.do";
+    	else if( "BS0240".equals(svcName))
+    		szURL = "/qrc/api/issBackTransReq.do";
+    	else if( "ZS0120".equals(svcName))
+    		szURL = "/qrc/api/issBackTransReq.do";
+    	else if( "ZS0130".equals(svcName))
+    		szURL = "/qrc/api/issBackTransReq.do";
+    	else if( "ZS0140".equals(svcName))
+    		szURL = "/qrc/api/issBackTransReq.do";
+    	else if( "ZS0160".equals(svcName))
+    		szURL = "/qrc/api/issBackTransReq.do";
+    	else if( "ZS0180".equals(svcName))
+    		szURL = "/qrc/api/issBackTransReq.do";
+    	else if( "ZS0510".equals(svcName))
+    		szURL = "/qrc/api/merBackTransReq.do";
+    	else if( "ZS0540".equals(svcName))
+    		szURL = "/qrc/api/merBackTransReq.do";
+    	else if( "ZS0570".equals(svcName))
+    		szURL = "/qrc/api/merBackTransReq.do";
+    	else if( "ZS0150".equals(svcName))
+    		szURL = "/qrc/api/merBackTransReq.do";
+    	else if( "ZS0170".equals(svcName))
+    		szURL = "/qrc/api/merBackTransReq.do";
+	
+	return szURL;
+    }
+
+    /**
+     * 获取国密用户标识
+     */
+    public static String getUnionUserID() {
+	String unionUserID = ResPool.configMap.get("UNION_userID");// 国密用户标识
+	return unionUserID;
+    }
+
+    /**
+     * 设置HTTP报文头信息
+     * 
+     * @param element
+     *            报文数据对象
+     * @param svrCode
+     *            服务码
+     */
+    public static void setCupHttpHead(String element, String svrCode) {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	EPOper.put(tpID, element + ".MsgTp", svrCode);
+	EPOper.put(tpID, element + ".OriIssrId", ResPool.configMap.get("CUP_OriIssrId"));
+    }
+
+    /**
+     * 银联HTTP报文头赋值
+     * 
+     * @throws Exception
+     */
+    public static void putCupHttpHead() {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+	String svcName = dtaInfo.getSvcName();
+	String svrName = svcName.substring(3);
+	EPOper.copy(tpID, tpID, "CUP_CLI_" + svrName + "_OUT[0].MsgHeader[0].CupHttpHead[0].MsgTp",
+		"CUP_HTTP_HEAD[0].MsgTp");
+	EPOper.copy(tpID, tpID, "CUP_CLI_" + svrName + "_OUT[0].MsgHeader[0].CupHttpHead[0].OriIssrId",
+		"CUP_HTTP_HEAD[0].OriIssrId");
+	EPOper.copy(tpID, tpID, "CUP_CLI_" + svrName + "_OUT[0].MsgHeader[0].CupHttpHead[0].SderReserved",
+		"CUP_HTTP_HEAD[0].SderReserved");
+	EPOper.copy(tpID, tpID, "CUP_CLI_" + svrName + "_OUT[0].MsgHeader[0].CupHttpHead[0].RcverReserved",
+		"CUP_HTTP_HEAD[0].RcverReserved");
+	EPOper.copy(tpID, tpID, "CUP_CLI_" + svrName + "_OUT[0].MsgHeader[0].CupHttpHead[0].CupsReserved",
+		"CUP_HTTP_HEAD[0].CupsReserved");
+    }
+
+    /****** new ************/
+    /**
+     * @Description: 按照接口要求组装付款方信息,并转换成base64格式
+     * @author Q
+     * @return 用{}连接并base64后的付款方信息
+     * @throws Exception
+     * @date 2017年12月14日下午3:32:58
+     */
+    public static String getPayerInfo(String svrReq) throws Exception {
+
+	Map<String, String> payerInfoMap = new HashMap<String, String>();
+
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	String accNo = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].accNo");
+	String name = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].name");
+	String payerBankInfo = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].payerBankInfo");
+	String issCode = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].issCode");
+	String acctClass = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].acctClass");
+	String certifTp = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].certifTp");
+	String certifId = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].certifId");
+	String cvn2 = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].cvn2");
+	String expired = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].expired");
+	String cardAttr = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].cardAttr");
+	String mobile = (String) EPOper.get(tpID, svrReq+"[0].cd[0].payerInfo[0].mobile");
+
+	if (accNo == null || accNo.trim().isEmpty()) {
+	    SysPub.appLog("ERROR", "付款账号必须上送");
+	    return null;
+	}
+	payerInfoMap.put("accNo", accNo);
+
+	if (name != null && !name.trim().isEmpty()) {
+	    payerInfoMap.put("name", name);
+	}
+	if (payerBankInfo != null && !payerBankInfo.trim().isEmpty()) {
+	    payerInfoMap.put("payerBankInfo", payerBankInfo);
+	}
+	if (issCode != null && !issCode.trim().isEmpty()) {
+	    payerInfoMap.put("issCode", issCode);
+	}
+	if (acctClass != null && !acctClass.trim().isEmpty()) {
+	    payerInfoMap.put("acctClass", acctClass);
+	}
+	if (certifTp != null && !certifTp.trim().isEmpty()) {
+	    payerInfoMap.put("certifTp", certifTp);
+	}
+	if (certifId != null && !certifId.trim().isEmpty()) {
+	    payerInfoMap.put("certifId", certifId);
+	}
+	if (cvn2 != null && !cvn2.trim().isEmpty()) {
+	    payerInfoMap.put("cvn2", cvn2);
+	}
+	if (expired != null && !expired.trim().isEmpty()) {
+	    payerInfoMap.put("expired", expired);
+	}
+	if (cardAttr != null && !cardAttr.trim().isEmpty()) {
+	    payerInfoMap.put("cardAttr", cardAttr);
+	}
+	if (mobile != null && !mobile.trim().isEmpty()) {
+	    payerInfoMap.put("mobile", mobile);
+	}
+	return SignService.formInfoBase64(payerInfoMap, SDKConstants.UTF_8_ENCODING);
+    }
+
+    /**
+     * @Description: 按照接口要求组装风控信息,并转换成base64格式
+     * @author Q
+     * @param encoding
+     *            编码方式 默认utf-8
+     * @return 用{}连接并base64后的付款方信息
+     * @throws Exception
+     * @date 2017年12月14日下午3:37:12
+     */
+    public static String getRiskInfo(String encoding, String svrReq) throws Exception {
+
+	Map<String, String> riskInfoMap = new HashMap<String, String>();
+
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String tpID = dtaInfo.getTpId();
+
+	int suffixNo = EPOper.getSuffixNo(tpID, "RISKINFO");
+	if (suffixNo < 1) {
+	    return null;
+	}
+
+	String deviceID = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceID");
+	String deviceType = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceType");
+	String mobile = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].mobile");
+	String accountIdHash = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].accountIdHash");
+	String sourceIP = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].sourceIP");
+	String DeviceLocation = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].DeviceLocation");
+	String fullDeviceNumber = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].fullDeviceNumber");
+	String captureMethod = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].captureMethod");
+	String deviceSimNumber = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceSimNumber");
+	String deviceLanguage = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceLanguage");
+	String deviceName = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceName");
+	String usrRgstrDt = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].usrRgstrDt");
+	String accountEmailLife = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].accountEmailLife");
+	String cardHolderName = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].cardHolderName");
+	String billingAddress = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].billingAddress");
+	String billingZip = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].billingZip");
+	String riskScore = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].riskScore");
+	String riskStandardVersion = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].riskStandardVersion");
+	String deviceScore = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].deviceScore");
+	String accountScore = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].accountScore");
+	String phoneNumberScore = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].phoneNumberScore");
+	String riskReasonCode = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].riskReasonCode");
+	String applyChannel = (String) EPOper.get(tpID, svrReq+"[0].cd[0].riskInfo[0].applyChannel");
+
+	if (deviceID == null || deviceID.trim().isEmpty()) {
+	    SysPub.appLog("ERROR", "设备标识必须上送");
+	    return null;
+	}
+	riskInfoMap.put("deviceID", deviceID);
+
+	if (deviceType == null || deviceType.trim().isEmpty()) {
+	    SysPub.appLog("ERROR", "设备类型必须上送");
+	    return null;
+	}
+	riskInfoMap.put("deviceType", deviceType);
+
+	if (mobile == null || mobile.trim().isEmpty()) {
+	    SysPub.appLog("ERROR", "银行预留手机号必须上送");
+	    return null;
+	}
+	riskInfoMap.put("mobile", mobile);
+
+	if (accountIdHash == null || accountIdHash.trim().isEmpty()) {
+	    SysPub.appLog("ERROR", "应用提供方账户ID必须上送");
+	    return null;
+	}
+	riskInfoMap.put("accountIdHash", accountIdHash);
+
+	if ((sourceIP == null || sourceIP.trim().isEmpty())
+		&& (DeviceLocation == null || DeviceLocation.trim().isEmpty())
+		&& (fullDeviceNumber == null || fullDeviceNumber.trim().isEmpty())) {
+	    SysPub.appLog("ERROR", "IP、设备GPS 位置、设备 SIM 卡号码，这三要素至少上送一个");
+	    return null;
+	}
+	if (sourceIP != null && sourceIP.trim().isEmpty()) {
+	    riskInfoMap.put("sourceIP", sourceIP);
+	}
+	if (DeviceLocation != null && DeviceLocation.trim().isEmpty()) {
+	    riskInfoMap.put("DeviceLocation", DeviceLocation);
+	}
+	if (fullDeviceNumber != null && fullDeviceNumber.trim().isEmpty()) {
+	    riskInfoMap.put("fullDeviceNumber", fullDeviceNumber);
+	}
+
+	/* 以下都是可选要素 */
+	if (captureMethod != null && captureMethod.trim().isEmpty()) {
+	    riskInfoMap.put("captureMethod", captureMethod);
+	}
+	if (deviceSimNumber != null && deviceSimNumber.trim().isEmpty()) {
+	    riskInfoMap.put("deviceSimNumber", deviceSimNumber);
+	}
+	if (deviceLanguage != null && deviceLanguage.trim().isEmpty()) {
+	    riskInfoMap.put("deviceLanguage", deviceLanguage);
+	}
+	if (deviceName != null && deviceName.trim().isEmpty()) {
+	    riskInfoMap.put("deviceName", deviceName);
+	}
+	if (usrRgstrDt != null && usrRgstrDt.trim().isEmpty()) {
+	    riskInfoMap.put("usrRgstrDt", usrRgstrDt);
+	}
+	if (accountEmailLife != null && accountEmailLife.trim().isEmpty()) {
+	    riskInfoMap.put("accountEmailLife", accountEmailLife);
+	}
+	if (cardHolderName != null && cardHolderName.trim().isEmpty()) {
+	    riskInfoMap.put("cardHolderName", cardHolderName);
+	}
+	if (billingAddress != null && billingAddress.trim().isEmpty()) {
+	    riskInfoMap.put("billingAddress", billingAddress);
+	}
+	if (billingZip != null && billingZip.trim().isEmpty()) {
+	    riskInfoMap.put("billingZip", billingZip);
+	}
+	if (riskScore != null && riskScore.trim().isEmpty()) {
+	    riskInfoMap.put("riskScore", riskScore);
+	}
+	if (riskStandardVersion != null && riskStandardVersion.trim().isEmpty()) {
+	    riskInfoMap.put("riskStandardVersion", riskStandardVersion);
+	}
+	if (deviceScore != null && deviceScore.trim().isEmpty()) {
+	    riskInfoMap.put("deviceScore", deviceScore);
+	}
+	if (accountScore != null && accountScore.trim().isEmpty()) {
+	    riskInfoMap.put("accountScore", accountScore);
+	}
+	if (phoneNumberScore != null && phoneNumberScore.trim().isEmpty()) {
+	    riskInfoMap.put("phoneNumberScore", phoneNumberScore);
+	}
+	if (riskReasonCode != null && riskReasonCode.trim().isEmpty()) {
+	    riskInfoMap.put("riskReasonCode", riskReasonCode);
+	}
+	if (applyChannel != null && applyChannel.trim().isEmpty()) {
+	    riskInfoMap.put("applyChannel", applyChannel);
+	}
+
+	return SignService.formInfoBase64(riskInfoMap, SDKConstants.UTF_8_ENCODING);
+    }
+
+    /**
+     * @Description: 修改t_qrps_book的状态
+     * @author Q
+     * @param stat
+     *            状态
+     * @return
+     * @throws Exception
+     * @date 2018年1月2日上午11:31:57
+     */
+    public static int uptQrpsBookStat(String platDate, int seqNo, String stat) throws Exception {
+
+	if (StringUtils.isEmpty(platDate) || seqNo <= 0 || StringUtils.isEmpty(stat)) {
+	    SysPub.appLog("ERROR", "平台日期[%s]平台流水[%d]状态[%s]都不能为空", platDate, seqNo, stat);
+	    return 0;
+	}
+
+	int ret = 0;
+
+	try {
+	    String szSql = "update t_qrp_book set stat = ? where plat_date = ? and seq_no = ? ";
+	    SysPub.appLog("INFO", "平台日期[%s]平台流水[%d]状态[%s]", platDate, seqNo, stat);
+	    if (StringUtils.isEmpty(stat)) {
+		stat = "200";
+	    }
+	    Object[] value = { stat, platDate, seqNo };
+	    ret = DataBaseUtils.execute(szSql, value);
+	    if (ret == 0) {
+		SysPub.appLog("ERROR", "更新原纪录失败");
+	    }
+	} catch (Exception e) {
+	    throw e;
+	}
+	return ret;
+
+    }
+
+    /**
+     * @Description: 根据日期二维码和请求类型查询信息
+     * @author Q
+     * @param platDate
+     * @param qrCode
+     * @param reqType
+     * @return
+     * @throws Exception
+     * @date 2018年1月3日下午5:17:40
+     */
+    public static int queryQrpsBook(String platDate, String qrCode, String reqType) throws Exception {
+
+	int ret = 0;
+
+	if (StringUtils.isEmpty(platDate) || StringUtils.isEmpty(qrCode) || StringUtils.isEmpty(reqType)) {
+	    SysPub.appLog("ERROR", "平台日期[%s]二维码[%s]报文类型[%s]都不能为空", platDate, qrCode, reqType);
+	    return 0;
+	}
+
+	try {
+	    String szSql = "select * from t_qrp_book where plat_date = ? and qr_code = ? and req_type = ? ";
+	    SysPub.appLog("INFO", "平台日期[%s]二维码[%s]报文类型[%s]", platDate, qrCode, reqType);
+	    Object[] value = { platDate, qrCode, reqType };
+	    ret = DataBaseUtils.queryToElem(szSql, "T_QRP_BOOK", value);
+	    if (ret == 0) {
+		SysPub.appLog("INFO", "没有找到记录");
+	    }
+	} catch (Exception e) {
+	    throw e;
+	}
+	return ret;
+
+    }
+    /**
+     * @Description: 根据日期二维码和请求类型查询信息
+     * @author Q
+     * @param platDate
+     * @param qrCode
+     * @param reqType
+     * @return
+     * @throws Exception
+     * @date 2018年1月3日下午5:17:40
+     */
+    public static int queryQrpsBookByQrCode( String qrCode, String reqType) throws Exception {
+    	
+    	int ret = 0;
+    	
+    	if ( StringUtils.isEmpty(qrCode) || StringUtils.isEmpty(reqType)) {
+    		SysPub.appLog("ERROR", "二维码[%s]报文类型[%s]都不能为空", qrCode, reqType);
+    		return 0;
+    	}
+    	
+    	try {
+    		String szSql = "select * from t_qrp_book where  qr_code = ? and req_type = ? ";
+    		SysPub.appLog("INFO", "二维码[%s]报文类型[%s]", qrCode, reqType);
+    		Object[] value = {  qrCode, reqType };
+    		ret = DataBaseUtils.queryToElem(szSql, "T_QRP_BOOK", value);
+    		if (ret == 0) {
+    			SysPub.appLog("INFO", "没有找到记录");
+    		}
+    	} catch (Exception e) {
+    		throw e;
+    	}
+    	return ret;
+    	
+    }
+
+    /**
+     * @Description: 交易序列号查询
+     * @author Q
+     * @param txnNo
+     * @param reqType
+     * @return
+     * @throws Exception
+     * @date 2018年1月4日上午9:13:23
+     */
+    public static int queryQrpsBook(String txnNo, String reqType) throws Exception {
+
+	int ret = 0;
+
+	if (StringUtils.isEmpty(txnNo) || StringUtils.isEmpty(reqType)) {
+	    SysPub.appLog("ERROR", "交易序列号[%s]报文类型[%s]都不能为空", txnNo, reqType);
+	    return 0;
+	}
+
+	try {
+	    String szSql = "select * from t_qrp_book where txn_no = ? and req_type = ? ";
+	    SysPub.appLog("INFO", "交易序列号[%s]报文类型[%s]", txnNo, reqType);
+	    Object[] value = { txnNo, reqType };
+	    ret = DataBaseUtils.queryToElem(szSql, "T_QRP_BOOK", value);
+	    if (ret == 0) {
+		SysPub.appLog("INFO", "没有找到记录");
+	    }
+	} catch (Exception e) {
+	    throw e;
+	}
+	return ret;
+
+    }
+
+    /**
+     * 根据订单编号和交易类型查询流水
+     * 
+     * **/
+    public static int queryBookbyOrderno(String  orderNo,String orderTime,String reqType) throws Exception {
+    	int ret = 0;
+    	if (StringUtils.isEmpty(orderNo)|| StringUtils.isEmpty(orderTime) || StringUtils.isEmpty(reqType)) {
+    	    SysPub.appLog("ERROR", "订单编号[%s]订单时间[%s]报文类型[%s]都不能为空", orderNo,orderTime, reqType);
+    	    return 0;
+    	}
+    	try {
+    	    String szSql = "select * from t_qrp_book where order_no = ? and order_time = ? and req_type = ? ";
+    	    SysPub.appLog("INFO", "订单编号[%s]订单时间[%s]报文类型[%s]", orderNo,orderTime, reqType);
+    	    Object[] value = { orderNo,orderTime, reqType };
+    	    ret = DataBaseUtils.queryToElem(szSql, "T_QRP_BOOK", value);
+    	    if (ret == 0) {
+    		SysPub.appLog("INFO", "没有找到记录");
+    	    }
+    	} catch (Exception e) {
+    	    throw e;
+    	}
+    	
+		return ret;
+    	
+    }
+    
+    /**
+     * 根据凭证号查询流水
+     * 
+     * **/
+    public static int queryBookbyvoucherNum(String  voucherNum,String reqType) throws Exception {
+    	int ret = 0;
+    	if (StringUtils.isEmpty(voucherNum)|| StringUtils.isEmpty(reqType)) {
+    	    SysPub.appLog("ERROR", "凭证号[%s]报文类型[%s]都不能为空", voucherNum, reqType);
+    	    return 0;
+    	}
+    	try {
+    	    String szSql = "select * from t_qrp_book where VOUCHER_NUM = ?  and req_type = ? ";
+    	    SysPub.appLog("INFO", "凭证号[%s]报文类型[%s]", voucherNum, reqType);
+    	    Object[] value = { voucherNum, reqType };
+    	    ret = DataBaseUtils.queryToElem(szSql, "T_QRP_BOOK", value);
+    	    if (ret == 0) {
+    		SysPub.appLog("INFO", "没有找到记录");
+    	    }
+    	} catch (Exception e) {
+    	    throw e;
+    	}
+    	
+		return ret;
+    	
+    }
+
+    /**
+     * @Description: 通过付款凭证号查询
+     * @author Q
+     * @param txnNo
+     * @param reqType
+     * @return
+     * @throws Exception
+     * @date 2018年1月4日上午9:13:23
+     */
+    public static int queryQrpsBookByVoucherNum(String voucherNum, String reqType) throws Exception {
+    	
+    	int ret = 0;
+    	
+    	if (StringUtils.isEmpty(voucherNum) || StringUtils.isEmpty(reqType)) {
+    		SysPub.appLog("ERROR", "付款凭证号[%s]报文类型[%s]都不能为空", voucherNum, reqType);
+    		return 0;
+    	}
+    	
+    	try {
+    		String szSql = "select * from t_qrp_book where voucher_num = ? and req_type = ? ";
+    		SysPub.appLog("INFO", "付款凭证号[%s]报文类型[%s]", voucherNum, reqType);
+    		Object[] value = { voucherNum, reqType };
+    		ret = DataBaseUtils.queryToElem(szSql, "T_QRP_BOOK", value);
+    		if (ret == 0) {
+    			SysPub.appLog("INFO", "没有找到记录");
+    		}
+    	} catch (Exception e) {
+    		throw e;
+    	}
+    	return ret;
+    	
+    }
+
+
+    /**
+     * @Description: 将app请求的信息转换到数据对象中
+     * @author Q
+     * @return
+     * @throws Exception
+     * @date 2017年12月16日下午9:57:52
+     */
+    public static int parsDataToEle(String svrReq) throws Exception {
+	DtaInfo dtaInfo = DtaInfo.getInstance();
+	String epID = dtaInfo.getTpId();
+
+	try {
+
+	    // payerInfo付款方信息PAYERINFO
+	    String payerInfo = (String) EPOper.get(epID, "OBJ_QRUP_ALL[0].payerInfo");
+	    SysPub.appLog("INFO", "payerInfo:%s", payerInfo);
+	    if (payerInfo != null && payerInfo.length() > 0) {
+		QrBusiPub.parsBase64Info2Ele(payerInfo, "payerInfo", svrReq);
+	    }
+	    // riskInfo风控信息RISKINFO
+	    String riskInfo = (String) EPOper.get(epID, "OBJ_QRUP_ALL[0].riskInfo");
+	    if (riskInfo != null && riskInfo.length() > 0) {
+		QrBusiPub.parsBase64Info2Ele(riskInfo, "riskInfo", svrReq);
+	    }
+	    // addnCond附加处理条件ADDNCOND
+	    String addnCond = (String) EPOper.get(epID, "OBJ_QRUP_ALL[0].addnCond");
+	    if (addnCond != null && addnCond.length() > 0) {
+		QrBusiPub.parsBase64Info2Ele(addnCond, "addnCond", svrReq);
+	    }
+	    // PAYEEINFO收款方信息PAYEEINFO
+	    String payeeInfo = (String) EPOper.get(epID, "OBJ_QRUP_ALL[0].payeeInfo");
+	    if (payeeInfo != null && payeeInfo.length() > 0) {
+		QrBusiPub.parsBase64Info2Ele(payeeInfo, "payeeInfo", svrReq);
+	    }
+	    // couponInfo优惠信息COUPONINFO
+	    // 优惠信息是json格式的字符串，要特殊处理
+	    String couponInfo = (String) EPOper.get(epID, "OBJ_QRUP_ALL[0].couponInfo");
+	    if (couponInfo != null && couponInfo.length() > 0) {
+		QrBusiPub.parsBase64Json2Ele(couponInfo, "couponInfo", svrReq);
+	    }
+	} catch (Exception e) {
+	    EPOper.put(epID, "INIT._FUNC_RETURN", 0, "-1");
+	    SysPub.appLog("ERROR", "解析base64字符串到数据对象失败！-%s", e.getMessage());
+	    throw e;
+	}
+
+	EPOper.put(epID, "INIT._FUNC_RETURN", 0, "0");
+
+	return 0;
+    }
+
+}

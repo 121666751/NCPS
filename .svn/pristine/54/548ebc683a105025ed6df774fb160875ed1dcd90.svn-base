@@ -1,0 +1,651 @@
+package com.adtec.ncps.busi.chnl;
+
+import java.io.BufferedReader;
+import java.io.BufferedWriter;
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.InputStreamReader;
+import java.io.OutputStreamWriter;
+import java.math.BigDecimal;
+import java.text.SimpleDateFormat;
+import java.util.Date;
+import java.util.Iterator;
+import java.util.List;
+import java.util.stream.DoubleStream;
+
+import com.adtec.ncps.DtaTool;
+import com.adtec.ncps.busi.ncp.AmountUtils;
+import com.adtec.ncps.busi.ncp.DataBaseUtils;
+import com.adtec.ncps.busi.ncp.PubTool;
+import com.adtec.ncps.busi.ncp.SftpClientUtils;
+import com.adtec.ncps.busi.ncp.SysPub;
+import com.adtec.starring.datapool.EPOper;
+import com.adtec.starring.global.SysDef;
+import com.adtec.starring.respool.ResPool;
+import com.adtec.starring.struct.dta.DtaInfo;
+
+public class GW3004 {
+
+	public static final int CLUM = 6;
+	public static final int HOSTCLUM = 9;
+
+	public static int cmp(double v1, double v2) {
+		BigDecimal b1 = new BigDecimal(String.valueOf(v1));
+		BigDecimal b2 = new BigDecimal(String.valueOf(v2));
+		return b1.compareTo(b2);
+	}
+
+	public static double add(double v1, double v2) {
+		BigDecimal b1 = new BigDecimal(String.valueOf(v1));
+		BigDecimal b2 = new BigDecimal(String.valueOf(v2));
+		return b1.add(b2).doubleValue();
+	}
+	
+	 
+	
+	
+	public static int clear_bat(String batNO) throws Exception {
+		try {
+			String szSql1 = "delete from t_bat_detail where bat_no = ?";
+			Object[] value1 = { batNO };
+
+			DataBaseUtils.executenotr(szSql1, value1);
+
+			szSql1 = "delete from t_bat_ctl where bat_no = ?";
+			DataBaseUtils.executenotr(szSql1, value1);
+
+		} catch (Exception e) {
+			// TODO Auto-generated catch block
+			throw e;
+		}
+		return 0;
+	}
+
+	public static int chk_trans(String tpID, String svrReq, String svrRes, Integer totalNumber, Double totalAmount,
+			String contractNo, String filePathName) {
+
+		if (null == totalNumber || totalNumber.intValue() == 0) {
+			EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+			EPOper.put(tpID, svrRes + "[0].hostErrorMessage", "输入总笔数不能为空");
+			return -1;
+		}
+	/*	if (totalNumber.intValue() > 20000) {
+			EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+			EPOper.put(tpID, svrRes + "[0].hostErrorMessage", "输入总笔数大于20000");
+			return -1;
+		}*/
+		if (null == totalAmount || totalAmount.compareTo((double) 0.00) <= 0) {
+			EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+			EPOper.put(tpID, svrRes + "[0].hostErrorMessage", "输入总金额不能为空");
+			return -1;
+		}
+		if (null == contractNo || contractNo.length() == 0) {
+			EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+			EPOper.put(tpID, svrRes + "[0].hostErrorMessage", "输入放款账号不能为空");
+			return -1;
+		}
+		if (null == filePathName || filePathName.length() == 0) {
+			EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+			EPOper.put(tpID, svrRes + "[0].hostErrorMessage", "输入文件名不能为空");
+			return -1;
+		}
+		/* 当天代发记录有两笔代发总笔数与总金额都相等! */
+
+		return 0;
+
+	}
+
+	/*
+	 * 更新核心文件生成结果文件
+	 * 
+	 */
+
+	public static int anlyse_hostfile(String batNO, String svrReq, String svrRes, String filePathName, String strSeq,
+			String platDate) throws Exception {
+		try {
+
+			DtaInfo dtaInfo = DtaInfo.getInstance();
+			String tpID = dtaInfo.getTpId();
+
+			// String platDate = PubTool.getDate8();
+
+			/* 登记表信息 */
+			String filePath =SysDef.WORK_DIR + ResPool.configMap.get("FilePath")+"/netbank/";
+			String szFileName = filePath + "/" + filePathName;
+			SysPub.appLog("INFO", "STEP2 解析文件[%s]", szFileName);
+			/****************************************************************************
+			 * 文件格式： "序号|行别|币种|金额|备注|收款账号|状态码|状态信息|冻结编号|
+			 ****************************************************************************/
+
+			File file = new File(szFileName);
+			if (!file.exists()) {
+				SysPub.appLog("INFO", "[%s]不存在", szFileName);
+				EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+				EPOper.put(tpID, svrRes + "[0].hostErrorMessage", "文件不存在");
+				return -1;
+			}
+			FileInputStream fs = new FileInputStream(file);
+			InputStreamReader read = new InputStreamReader(fs, "GB2312");
+			BufferedReader bufferedReader = new BufferedReader(read);
+
+			String sendfileName = String.format("snccb_pz_%s_%s.txt", batNO, strSeq);
+			SysPub.appLog("INFO", "STEP2 结果文件[%s]", sendfileName);
+
+			File sendfile = new File(filePath + "/" + sendfileName);
+			if (!sendfile.exists()) {
+				sendfile.createNewFile();
+			}
+
+			String sline = "";
+			FileOutputStream in = new FileOutputStream(sendfile);
+
+			String szOneLine = "";
+			int seq = 0;
+
+			while ((szOneLine = bufferedReader.readLine()) != null) {
+
+				String[] destString = szOneLine.split("\\|");
+				SysPub.appLog("INFO", "szOneLine:[%s]", szOneLine);
+				if (HOSTCLUM != destString.length) {
+					String msg = String.format("[%s]第 [%d]分隔符错", szFileName, seq + 1);
+					EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+					EPOper.put(tpID, svrRes + "[0].hostErrorMessage", msg);
+					bufferedReader.close();
+					read.close();
+					fs.close();
+					in.close();
+					return -1;
+				}
+
+				String sRemark = destString[0];
+				String sTxCnt = destString[1];
+				String sErrCode = destString[2];
+				String sErrMsg = destString[3];
+				String sHxTraceNo = destString[7];
+
+				Double damt = Double.valueOf(destString[8]);
+
+				String szSql1 = "update t_bat_detail set ret_code = ?, ret_msg =?,host_seq_no= ?,stat ='2' where bat_no =? and list_seq =? and req_date=?";
+
+				Object[] value1 = { sErrCode, sErrMsg, sHxTraceNo, batNO, sTxCnt, platDate };
+				DataBaseUtils.execute(szSql1, value1);
+
+				sline = String.format("%s|%s|%s|%s||%s|%s|%s|%s|%s|\n", sTxCnt, /* 序号 */
+						"", /* 行别 */
+						"CNY", /* 币种 */
+						String.valueOf(damt), /* 金额 */
+						sRemark, /* 备注 */
+						sHxTraceNo, /* 核心流水 */
+						sErrCode, /* 状态码 */
+						sErrMsg, /* 状态信息 */
+						"" /* 冻结编号 */
+				);
+				byte bt[] = new byte[4096];
+				bt = sline.getBytes();
+				in.write(bt);
+				seq++;
+
+			}
+
+			in.close();
+
+			bufferedReader.close();
+			read.close();
+			fs.close();
+			String szSql2 = "update t_bat_ctl set ret_file_name = ?,stat ='2'  where bat_no =? and plat_date=?";
+
+			Object[] value2 = { sendfileName, batNO,platDate };
+			DataBaseUtils.execute(szSql2, value2);
+			return 0;
+		} catch (Exception e) {
+			SysPub.appLog("ERROR", "执行 anlyse_hostfile方法失败");
+			throw e;
+		}
+	}
+
+	public static int anlyse_recvfile(String batNO, String svrReq, String svrRes, String filePathName, String strSeq,
+			String platDate, String pay_accno,String ISO_8583,String[] pubData) throws Exception {
+		try {
+			SysPub.appLog("INFO", "pay_accno:[%s]", pay_accno);
+			DtaInfo dtaInfo = DtaInfo.getInstance();
+			String tpID = dtaInfo.getTpId();
+			Integer totalNumber = Integer.parseInt( EPOper.get(tpID, svrReq + "[0].cd[0].totalNumber").toString());
+			Double totalAmount = Double.parseDouble( EPOper.get(tpID, svrReq + "[0].cd[0].totalAmount").toString());
+
+			// String platDate = PubTool.getDate8();
+
+			/* 登记表信息 */
+			String filePathToHost = SysDef.WORK_DIR + ResPool.configMap.get("FilePath")+"/netbank/";
+
+			String fileName = filePathName.substring(filePathName.lastIndexOf("/"));
+			String filePathToNetbank = filePathName.substring(0,filePathName.lastIndexOf("/"));
+			
+			String szFileName = filePathToHost + "/" + fileName;
+			SysPub.appLog("INFO", "STEP2 解析文件[%s]", szFileName);
+			/****************************************************************************
+			 * 文件格式： 转入账号|转入户名|金额|备注|币种|序号|
+			 * 序号|转入账号|转入户名|金额|证件类型(可空)|证件号(可空)|代理行(可空)|
+			 ****************************************************************************/
+
+			File file = new File(szFileName);
+			if (!file.exists()) {
+				SysPub.appLog("INFO", "[%s]不存在", szFileName);
+				EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+				EPOper.put(tpID, svrRes + "[0].hostErrorMessage", "文件不存在");
+				return -1;
+			}
+			FileInputStream fs = new FileInputStream(file);
+			InputStreamReader read = new InputStreamReader(fs, "GBK");
+			BufferedReader bufferedReader = new BufferedReader(read);
+
+			// String filePath = System.getenv("JAVAWORKDIR") + "/" + "print";
+//			String sendfileName = String.format("ebank_pl_%s_%s_snd", batNO, strSeq);
+			String sendfileName = String.format("snccb_pz_%s_%s.txt", batNO, strSeq);
+			SysPub.appLog("INFO", "STEP2 上传核心文件[%s]", sendfileName);
+
+			File sendfile = new File(filePathToHost + "/" + sendfileName);
+			if (!sendfile.exists()) {
+				sendfile.createNewFile();
+			}
+
+			String sline = "";
+			FileOutputStream in = new FileOutputStream(sendfile);
+			BufferedWriter writer = new BufferedWriter(new OutputStreamWriter(in, "gbk"));
+
+			String szOneLine = "";
+			int seq = 0;
+
+			double totAmt = 0.00;
+			while ((szOneLine = bufferedReader.readLine()) != null) {
+				SysPub.appLog("INFO", "行内容：[%s]", szOneLine);
+				String[] destString = szOneLine.split("\\|");
+				if (CLUM != destString.length) {
+
+					clear_bat(batNO);
+
+					String msg = String.format("[%s]第 [%d]分隔符错", szFileName, seq + 1);
+					EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+					EPOper.put(tpID, svrRes + "[0].hostErrorMessage", msg);
+					bufferedReader.close();
+					read.close();
+					fs.close();
+					writer.close();
+					return -1;
+				}
+
+				Double damt = Double.valueOf(destString[2]);
+				totAmt = add(totAmt, damt);
+				String reqDate = PubTool.getDate8();
+				String szSql1 = "insert into t_bat_detail values (?,?,?,'','',?,?,?,?,?,'','','','','','','','','','','','0','',?,'','','','','','','',0.00,0.00,0.00,0.00,0.00)";
+
+				Object[] value1 = { batNO, seq, destString[5], reqDate, destString[0], destString[1], AmountUtils.changeF2Y(dealNum(damt)),
+						destString[3], destString[4] };
+				DataBaseUtils.execute(szSql1, value1);
+
+				sline = String.format(
+						"%s|%s|%s|%s|%f|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|%s|\n",
+						platDate, /* 委托日期 */
+						destString[5], /* 支付序号 */
+						pay_accno, /* 转出账号 */
+						destString[0], /* 转入卡号 */
+						damt, /* 交易金额 */
+						"0.00", /* 手续费 */
+						"0", /* 手续费出处 */
+						"0", /* 过渡账号 */
+						destString[1], /* 入账户名 */
+						"0", /* 挂账账号 */
+						"0", /* 挂账机构 */
+						destString[3], /* 摘要 */
+						"0", /* 转出户户名 */
+						"0", /* 往来标识 */
+						"1", /* 主账号增减标志 */
+						"0", /* 对方行号 */
+						"0", /* 对方账号 */
+						"0", /* 业务类型编号 */
+						"0", /* 业务种类 */
+						"3", /* 渠道类型 */
+						"0", /* 对方账号名称 */
+						"50001", /* 发起行行号 */
+						"0", /* 交易行内账号 */
+						"", /* 挂账检查标志,客户要求不校验户名 */
+						"0", /* 被冲正平台日期 */
+						"0", /* 被冲正平台流水 */
+						"0", /* 原记录单笔或批量记账的标志(1.单笔single 2.批量batch) */
+						"0" /* 单笔业务标识 */
+				);
+//				byte bt[] = new byte[4096];
+//				bt = sline.getBytes();
+				writer.write(sline);
+				seq++;
+
+			}
+
+			writer.close();
+
+			if (totalNumber != seq) {
+
+				clear_bat(batNO);
+
+				EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+				String msg = String.format("文件明细笔数[%d]与总笔数[%d]不符", seq, totalNumber);
+
+				EPOper.put(tpID, svrRes + "[0].hostErrorMessage", msg);
+				bufferedReader.close();
+				read.close();
+				fs.close();
+				return -1;
+			}
+			
+			totAmt=Double.parseDouble(AmountUtils.changeF2Y(dealNum(totAmt)));//用于后面比较，因为传送至核心的金额都是扩大了100倍的
+			if (cmp(totalAmount, totAmt) != 0) {
+
+				clear_bat(batNO);
+				EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+				String msg = String.format("文件明细总金额[%f]与总金额[%f]不符", totAmt, totalAmount);
+				EPOper.put(tpID, svrRes + "[0].hostErrorMessage", msg);
+				bufferedReader.close();
+				read.close();
+				fs.close();
+				return -1;
+			}
+
+			SysPub.appLog("INFO", "文件笔数[%d]金额[%s]", seq, String.valueOf(totAmt));
+			bufferedReader.close();
+			read.close();
+			fs.close();
+			/****
+			 * uLog(LOG_INFO," 设置核心公共域，前往核心记账！");
+			 */
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_010","EBNK");//系统类型
+//			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_002",pubData[1]);//网易机构号
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_003",pubData[1]);
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_005","99999999");//核心交易时间，（99999999 为不校验）
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_006",pubData[3]);//核心交易时间，（99999999 为不校验）
+//			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_007",pubData[4]);
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_018","EBNK");//交易渠道
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_044",pubData[2]);//平台日期
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_045",pubData[2]);//平台日期
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_052",pubData[0]);//平台流水
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_091",pubData[1]);//机构
+			
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_011","2");//传附件标志
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_016","6247");//交易代码
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_017",pubData[3]);//平台时间
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_026",sendfileName);//附件名
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_030","");//主账号
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_040",Double.parseDouble(AmountUtils.changeY2F(totalAmount.toString())));//总付款金额
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_048",totalNumber);//总付款笔数
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_067","2");//贷记业务
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_073","001000");//控制标志
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_081","批转");//摘要	
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_095","");//清空95域
+			EPOper.put(tpID, "PUB_ELEMENT[0].PlatSeqNo", strSeq);
+			EPOper.put(tpID, "ISO_8583[0].pub[0].PlatSeqNo", strSeq);// 流水号
+			EPOper.copy(tpID, tpID,  ISO_8583, "OBJ_ALA_abstarct_REQ[0].req");
+			try {
+				DtaTool.call("HOST_CLI", "S624700");
+			} catch (Exception e) { 
+				SysPub.appLog("ERROR", "调用核心服务失败");
+			}
+			EPOper.delete(tpID, ISO_8583);
+			EPOper.copy(tpID, tpID, "OBJ_ALA_abstarct_RES[0].res",  ISO_8583);
+//			String hostReq = (String) EPOper.get(tpID,   "ISO_8583[0].iso_8583_004");//核心流水
+			String retCode1 = (String) EPOper.get(tpID,   "ISO_8583[0].iso_8583_012");//响应代码
+			String retMsg1 = (String) EPOper.get(tpID,   "ISO_8583" + "[0].iso_8583_013");//响应信息
+			SysPub.appLog("INFO", "retCode1结果：[%s]",retCode1 );
+			SysPub.appLog("INFO", "比较结果：[%s]",!"0000".equals(retCode1) );
+			if(!"0000".equals(retCode1)){
+				/* 报文头 */
+				EPOper.copy(tpID, tpID, svrReq + "[0].tx_code", svrRes + "[0].tx_code");
+
+				/* 报文体 */
+				EPOper.put(tpID, svrRes + "[0].hostReturnCode", retCode1);
+				EPOper.put(tpID, svrRes + "[0].hostErrorMessage", retMsg1);
+				
+				
+				EPOper.copy(tpID, tpID, svrRes, "OBJ_ALA_abstarct_RES[0].res");
+				/* 更新返回码 */
+				String szSqlStr = "UPDATE t_jrnl  SET ret_code=?, ret_msg =?  WHERE plat_date = ? and seq_no = ? 	";
+				Object[] value = { retCode1, retMsg1, platDate, pubData[0] };
+				DataBaseUtils.execute(szSqlStr, value);
+
+				return -1;
+			}
+			SysPub.appLog("INFO", "STEP1 去核心[%s]检查完成", "6247");
+
+			/*** 记账成功更新返回文件 */
+			String hostFileName = "50001EBNK"+strSeq;
+			if(anlyse_hostfile( batNO,  svrReq,  svrRes,  hostFileName,  strSeq,
+					 platDate)<0)
+			{
+				
+				EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+				String msg = String.format("生成核心结果文件错");
+				EPOper.put(tpID, svrRes + "[0].hostErrorMessage", msg);
+				return -1;
+				
+			}
+			
+			//sftp上传文件
+			SftpClientUtils.netbankFile(filePathToNetbank, sendfileName, "2");
+			EPOper.put(tpID, svrRes + "[0].cd[0].filePathName", filePathToNetbank +"/"+ sendfileName );
+			
+
+			return 0;
+		} catch (Exception e) {
+			SysPub.appLog("ERROR", "执行 deal_jrnl 方法失败");
+			throw e;
+		}
+	}
+
+	public static int deal_trans() throws Exception {
+		try {
+			DtaInfo dtaInfo = DtaInfo.getInstance();
+			String tpID = dtaInfo.getTpId();
+
+			String svcName = (String) EPOper.get(tpID, "OBJ_ALA_abstarct_REQ[0].svcName");
+			svcName = svcName.toUpperCase();
+			
+			SysPub.appLog("INFO", "svcName2=" + svcName);
+
+			String svrReq = "OBJ_EBANK_SVR_" + svcName + "_REQ";
+			String svrRes = "OBJ_EBANK_SVR_" + svcName + "_RES";
+
+			String ISO_8583 = "ISO_8583";
+
+			SysPub.appLog("INFO", "svcName=" + svcName);
+			EPOper.copy(tpID, tpID, "OBJ_ALA_abstarct_REQ[0].req",svrReq);
+
+			/* 登记流水 */
+			String platDate = PubTool.getDate8();
+			// String strTime = PubTool.getTime();
+			int platSeq = PubTool.sys_get_seq10();
+			String strSeq = String.valueOf(platSeq);
+			String brchNo = "50001";//网银机构号 
+			String txDate = PubTool.getDate8();//平台日期 
+			String txTime =  PubTool.getTime();//平台时间
+			String tellerNo = "900015";// 	
+			String txCode = "GW3004";//交易码
+			String chNo = "";//(String) EPOper.get(tpID, svrReq + "[0].cd[0].channelNo");
+			String reqNo = "";//(String) EPOper.get(tpID, svrReq + "[0].cd[0].requestSeqNo");
+			String termNO = "EBANK";
+			String[] pubData = {strSeq,brchNo,txDate,txTime,tellerNo,txCode,chNo,reqNo,termNO};
+			String estwSeq = (String) EPOper.get(tpID, "__PLAT_FLOW.__FLOW_SEQ");
+			
+
+			Integer totalNumber = Integer.parseInt(EPOper.get(tpID, svrReq + "[0].cd[0].totalNumber").toString());
+			Double totalAmount = Double.parseDouble(EPOper.get(tpID, svrReq + "[0].cd[0].totalAmount").toString());
+			String contractNo = (String) EPOper.get(tpID, svrReq + "[0].cd[0].payAccount");
+			String filePathName = (String) EPOper.get(tpID, svrReq + "[0].cd[0].filePathName");
+
+			SysPub.appLog("INFO", "totalAmount=%f", totalAmount);
+			String batNo = (String) EPOper.get(tpID, svrReq + "[0].cd[0].batchNo");
+
+			String szSql1 = "insert into t_jrnl values (?,?,?,?,?,?,'','','',?,?,'',?,?,?,'','','','','','','','','',0,0,'','','','','','','','','','',0,'','','','','','','','',0,'','','','','',0,0,0,0)";
+			Object[] value1 = { platDate, platSeq, brchNo, tellerNo, termNO, chNo, estwSeq, txCode, txDate, txTime,
+					reqNo };
+			DataBaseUtils.execute(szSql1, value1);
+
+			SysPub.appLog("INFO", "预计流水完成！");
+
+			/* 交易报文检查 */
+
+			if (chk_trans(tpID, svrReq, svrRes, totalNumber, totalAmount, contractNo, filePathName) < 0) {
+
+				/* 报文头 */
+				EPOper.copy(tpID, tpID, svrReq + "[0].tx_code", svrRes + "[0].tx_code");
+
+				/* 报文体 */
+
+				EPOper.copy(tpID, tpID, svrRes, "OBJ_ALA_abstarct_RES[0].res");
+				/* 更新返回码 */
+				String retCode = (String) EPOper.get(tpID, svrRes + "[0].hostReturnCode");
+				String retMsg = (String) EPOper.get(tpID, svrRes + "[0].hostErrorMessage");
+				String szSqlStr = "UPDATE t_jrnl  SET ret_code=?, ret_msg =?  WHERE plat_date = ? and seq_no = ? 	";
+				Object[] value = { retCode, retMsg, platDate, platSeq };
+				DataBaseUtils.execute(szSqlStr, value);
+
+				return 0;
+
+			}
+			String fileName = filePathName.substring(filePathName.lastIndexOf("/")+1);
+			String filePath = filePathName.substring(0,filePathName.lastIndexOf("/"));
+			
+			//从SFTP获取批量转账文件内容
+			SftpClientUtils.netbankFile(filePath, fileName, "1");
+
+			/* 上核心查询 */
+			SysPub.appLog("INFO", "STEP1 去核心[%s]检查付款账户", "6544");
+			
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_002",brchNo);
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_003",brchNo);
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_005",txDate);
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_007",tellerNo);
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_010","NCPS");//前台终端号
+			
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_016","6544");//交易代码
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_040",AmountUtils.changeY2F(totalAmount.toString()));//
+			EPOper.put(tpID,  ISO_8583 + "[0].iso_8583_037",contractNo);//
+			EPOper.copy(tpID, tpID,  ISO_8583, "OBJ_ALA_abstarct_REQ[0].req");
+			try {
+				DtaTool.call("HOST_CLI", "S654400");
+			} catch (Exception e) {
+				SysPub.appLog("ERROR", "调用核心服务失败");
+			}
+			EPOper.delete(tpID, ISO_8583);
+			EPOper.copy(tpID, tpID, "OBJ_ALA_abstarct_RES[0].res",  ISO_8583);
+			String inAcctNo = (String) EPOper.get(tpID,   "ISO_8583" + "[0].iso_8583_038");//内部账号
+//			String inAcctName = (String) EPOper.get(tpID,  "ISO_8583" + "[0].iso_8583_026");//客户姓名
+			String retCode1 = (String) EPOper.get(tpID,   "ISO_8583[0].iso_8583_012");//响应代码
+			String retMsg1 = (String) EPOper.get(tpID,   "ISO_8583" + "[0].iso_8583_013");//响应信息
+			if(!"0000".equals(retCode1)){
+				/* 报文头 */
+				EPOper.copy(tpID, tpID, svrReq + "[0].tx_code", svrRes + "[0].tx_code");
+
+				/* 报文体 */
+				EPOper.put(tpID, svrRes + "[0].hostReturnCode", retCode1);
+				EPOper.put(tpID, svrRes + "[0].hostErrorMessage", retMsg1);
+				
+				EPOper.copy(tpID, tpID, svrRes, "OBJ_ALA_abstarct_RES[0].res");
+				/* 更新返回码 */
+				String szSqlStr = "UPDATE t_jrnl  SET ret_code=?, ret_msg =?  WHERE plat_date = ? and seq_no = ? 	";
+				Object[] value = { retCode1, retMsg1, platDate, platSeq };
+				DataBaseUtils.execute(szSqlStr, value);
+
+				return 0;
+			}
+			/* 更新返回码 */
+			String szSqlStr1 = "UPDATE t_jrnl  SET cust_no = ?   WHERE plat_date = ? and seq_no = ? 	";
+			Object[] value4 = { contractNo , platDate, platSeq };
+			DataBaseUtils.execute(szSqlStr1, value4);
+			SysPub.appLog("INFO", "STEP1 去核心[%s]检查完成", "6544");
+
+
+			/* 登记批次信息表 */
+			String szSql2 = "select * from  t_bat_ctl where plat_date = ? and acct_no = ? and tot_num = ? and tot_amt = ?  ";
+			Object[] value2 = { platDate, contractNo, totalNumber, totalAmount };
+			int ret = DataBaseUtils.queryToCount(szSql2, value2);
+			if (ret > 0) {
+
+				EPOper.put(tpID, svrRes + "[0].hostReturnCode", "9999");
+				String msg = String.format("当天代发记录有两笔代发总笔数与总金额都相等!");
+				EPOper.put(tpID, svrRes + "[0].hostErrorMessage", msg);
+				/* 报文头 */
+				EPOper.copy(tpID, tpID, svrReq + "[0].tx_code", svrRes + "[0].tx_code");
+
+				/* 报文体 */
+
+				EPOper.copy(tpID, tpID, svrRes, "OBJ_ALA_abstarct_RES[0].res");
+				String retCode = (String) EPOper.get(tpID, svrRes + "[0].hostReturnCode");
+				String retMsg = (String) EPOper.get(tpID, svrRes + "[0].hostErrorMessage");
+				String szSqlStr = "UPDATE t_jrnl  SET ret_code=?, ret_msg =?  WHERE plat_date = ? and seq_no = ? 	";
+				Object[] value = { retCode, retMsg, platDate, platSeq };
+				DataBaseUtils.execute(szSqlStr, value);
+
+				return 0;
+			}
+
+			SysPub.appLog("INFO", "登记批次信息！[%d]", ret);
+			/* 登记批次信息表 */
+			String szSql3 = "insert into t_bat_ctl values (?,?,'','X','','','','',?,'','','','','','','','',?,?,0,0,0,0,0,?,'','','','','','','',0,'','','','','','')";
+			Object[] value3 = { batNo, platDate, contractNo, totalNumber, totalAmount, filePathName };
+			DataBaseUtils.execute(szSql3, value3);
+
+			
+			if (anlyse_recvfile(batNo, svrReq, svrRes, filePathName, strSeq, platDate, contractNo, ISO_8583, pubData) < 0) {
+				/* 报文头 */
+				EPOper.copy(tpID, tpID, svrReq + "[0].tx_code", svrRes + "[0].tx_code");
+
+				/* 报文体 */
+
+				EPOper.copy(tpID, tpID, svrRes, "OBJ_ALA_abstarct_RES[0].res");
+				/* 更新返回码 */
+				String retCode = (String) EPOper.get(tpID, svrRes + "[0].hostReturnCode");
+				String retMsg = (String) EPOper.get(tpID, svrRes + "[0].hostErrorMessage");
+				String szSqlStr = "UPDATE t_jrnl  SET ret_code=?, ret_msg =?  WHERE plat_date = ? and seq_no = ? 	";
+				Object[] value = { retCode, retMsg, platDate, platSeq };
+				DataBaseUtils.execute(szSqlStr, value);
+
+				return 0;
+			}
+
+			/* 报文头 */
+			EPOper.copy(tpID, tpID, svrReq + "[0].tx_code", svrRes + "[0].tx_code");
+			EPOper.put(tpID, svrRes + "[0].hostReturnCode", "0000");
+			String msg = String.format("交易成功");
+			EPOper.put(tpID, svrRes + "[0].hostErrorMessage", msg);
+			/* 报文体 */
+			EPOper.put(tpID, svrRes + "[0].cd[0].batchNo", batNo);
+
+			EPOper.copy(tpID, tpID, svrRes, "OBJ_ALA_abstarct_RES[0].res");
+			/* 更新返回码 */
+			String retCode = (String) EPOper.get(tpID, svrRes + "[0].hostReturnCode");
+			String retMsg = (String) EPOper.get(tpID, svrRes + "[0].hostErrorMessage");
+			String szSqlStr = "UPDATE t_jrnl  SET ret_code=?, ret_msg =?  WHERE plat_date = ? and seq_no = ? 	";
+			Object[] value = { retCode, retMsg, platDate, platSeq };
+			DataBaseUtils.execute(szSqlStr, value);
+
+			SysPub.appLog("INFO", "更新业务状态完成");
+
+			return 0;
+		} catch (Exception e) {
+			SysPub.appLog("ERROR", "执行 deal_jrnl 方法失败");
+			throw e;
+		}
+	}
+	
+	
+	
+	/**
+	 * 去除double后的小数点部分，并变为String
+	 * @param doub
+	 * @return
+	 */
+	public static String dealNum(Double doub) {
+		String doubStr = String.valueOf(doub);
+		int index = doubStr.indexOf(".");
+		return doubStr.substring(0,index);
+	}
+	
+}
