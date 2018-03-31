@@ -59,6 +59,22 @@ public class BusinessException extends RuntimeException {
 		super(cause);
 		// TODO Auto-generated constructor stub
 	}
+	public String getErrorCode() {
+		return errorCode;
+	}
+	public void setErrorCode(String errorCode) {
+		this.errorCode = errorCode;
+	}
+	public String getErrorMsg() {
+		return errorMsg;
+	}
+	public void setErrorMsg(String errorMsg) {
+		this.errorMsg = errorMsg;
+	}
+	@Override
+	public String toString() {
+		return "BusinessException [errorCode=" + errorCode + ", errorMsg=" + errorMsg + "]";
+	}
 	
 	
 }
